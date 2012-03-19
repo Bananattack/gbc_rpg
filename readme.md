@@ -1,12 +1,6 @@
-Dungeon Crawler (GameBoy Color homebrew)
-----------------------------------------
+Dungeon Crawler (Game Boy Color homebrew)
+-----------------------------------------
 *by Overkill and Kramlack*
-
-###Details
-
-* Title - To be announced.
-* Release Date - To be announced.
-* Platform - Game Boy Color.
 
 ###Description
 
