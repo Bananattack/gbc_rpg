@@ -9,7 +9,7 @@ Build Requirements
 * Python 2.7
 * PIL
 * RGBDS (Windows version included). For other platforms, use build [from source](https://github.com/bentley/rgbds).
-* Pucrunch (Windows version included). For other platforms, build [from source](http://www.cs.tut.fi/~albert/Dev/pucrunch/#Progs) -- it's pretty simple.
+* Pucrunch (Windows version included). For other platforms, build [from source](http://www.cs.tut.fi/~albert/Dev/pucrunch/).
 
 How to Build
 ------------
