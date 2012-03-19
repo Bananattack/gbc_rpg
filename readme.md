@@ -16,11 +16,11 @@ On Windows, run `build.bat` When it successfully compiles, you should have a `he
 
 Hardware Compatibility
 ----------------------
-* Game Boy Color - Seems to work well (Thanks Kramlack).
 * Game Boy - ?
-* Game Boy Pocket - ?
 * Game Boy Advance - ?
 * Game Boy Advance SP - ?
+* Game Boy Color - Seems to work well, so far (Thanks Kramlack for trying it). This is the primary intended platform, but it should work on other GB hardware as well.
+* Game Boy Pocket - ?
 * Super Game Boy - ?
 
 Emulator Compatibility
