@@ -6,3 +6,7 @@ bgb.ini
 *.gb
 *.chr
 *.zhr
+*.auto.*
+*.tdb
+*.dmp
+*.pyc

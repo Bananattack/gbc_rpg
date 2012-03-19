@@ -9,6 +9,12 @@ python tools/img2gb.py -oldfart resources/tiles/a.png
 IF ERRORLEVEL 1 GOTO Done
 python tools/img2gb.py resources/tiles/b.png
 IF ERRORLEVEL 1 GOTO Done
+python tools/itemdump.py resources/data/items --format=z80 --out=resources/data/items.dmp
+IF ERRORLEVEL 1 GOTO Done
+python tools/itemdump.py resources/data/items --format=texts --out=resources/data/items.auto.txt
+IF ERRORLEVEL 1 GOTO Done
+python tools/textgen.py resources/data/items.auto.txt
+IF ERRORLEVEL 1 GOTO Done
 python tools/textgen.py resources/text/messages.txt
 IF ERRORLEVEL 1 GOTO Done
 

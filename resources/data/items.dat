@@ -1,0 +1,14 @@
+item Jelly
+    consumable
+    desc A mysterious gelatinous blob.
+end
+
+item Kelp
+    consumable
+    desc It's slimy! It's tasty!
+end
+
+item Knife
+    weapon
+    desc It slices, it dices!
+end

@@ -17,6 +17,7 @@ translations = {
     '!': 0xB6,
     '?': 0xB7,
     '\'': 0xB8,
+    ',': 0xB4,
     ':': 0xC7,
     '/': 0xC6,
 }
@@ -41,7 +42,7 @@ if __name__ == '__main__':
                 exit('Invalid argument `' + filename + '`.')
             
             f = open(filename, 'r')
-            save_filename = os.path.splitext(filename)[0] + '.dat'
+            save_filename = os.path.splitext(filename)[0] + '.tdb'
             try:
                 save_file = open(save_filename, 'w')
             except Exception as e:
@@ -79,4 +80,4 @@ if __name__ == '__main__':
                     
     else:
         print('Usage: ' + sys.argv[0] + ' file [file...]')
-        print('Converts files like foo.png into GB-friendly formats like foo.chr')
+        print('Converts text files into assemblies containing labelled tile data.')

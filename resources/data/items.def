@@ -1,0 +1,12 @@
+item block
+    name text
+    desc text
+    cost word
+    kind enum
+        consumable kind
+        weapon kind
+        armor kind
+    target set=self
+        self target
+        enemy target
+        randomized target

@@ -112,7 +112,9 @@ magically_compressed_tiles:
     ; solid 3
     ;DW $FFFF, $FFFF, $FFFF, $FFFF, $FFFF, $FFFF, $FFFF, $FFFF
 
-INCLUDE "resources/text/messages.dat"
+INCLUDE "resources/text/messages.tdb"
+INCLUDE "resources/data/items.auto.tdb"
+INCLUDE "resources/data/items.dmp"
 
 metatiles:
     ;------------------------------------------;
