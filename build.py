@@ -1,18 +1,16 @@
-#!/usr/bin/env python
-
 PRE_CLEAN = ['hello.obj', 'hello.sym', 'hello.map', 'hello.gb', 'a.chr', 'b.chr', 'b.zhr']
 
 COMMANDS = [
-    'python tools/img2gb.py -oldfart resources/tiles/a.png',
-    'python tools/img2gb.py resources/tiles/b.png',
-    'python tools/itemdump.py resources/data/items --format=z80 --out=resources/data/items.dmp',
-    'python tools/itemdump.py resources/data/items --format=texts --out=resources/data/items.auto.txt',
-    'python tools/textgen.py resources/data/items.auto.txt',
-    'python tools/textgen.py resources/text/messages.txt',
+    '{python} tools/img2gb.py -oldfart resources/tiles/a.png',
+    '{python} tools/img2gb.py resources/tiles/b.png',
+    '{python} tools/itemdump.py resources/data/items --format=z80 --out=resources/data/items.dmp',
+    '{python} tools/itemdump.py resources/data/items --format=texts --out=resources/data/items.auto.txt',
+    '{python} tools/textgen.py resources/data/items.auto.txt',
+    '{python} tools/textgen.py resources/text/messages.txt',
     '{pucrunch_path}/pucrunch -d -c0 resources/tiles/b.chr resources/tiles/b.zhr',
     '{rgbds_path}/rgbasm -ohello.obj code/main.z80',
-    '{rgbds_path}/xlink -mhello.map -nhello.sym xlink.cfg',
-    '{rgbds_path}/rgbfix -p -v hello.gb'
+    '{rgbds_path}/rgblink -mhello.map -nhello.sym -ohello.gb hello.obj',
+    '{rgbds_path}/rgbfix -p0 -v hello.gb'
 ]
 
 POST_CLEAN = ['hello.obj', 'hello.sym', 'hello.map']
@@ -21,6 +19,9 @@ if __name__ == '__main__':
     import os
     import sys
     import subprocess
+
+    if sys.version_info[:2] < (2, 7):
+        exit('Insufficient python version (needs 2.7):\n' + sys.version)
 
     pucrunch_path = 'tools'
     rgbds_path = 'tools'
@@ -70,9 +71,9 @@ if __name__ == '__main__':
 
     sys.stderr.write('>> Building...\n')
     for command in COMMANDS:
-        command = command.format(pucrunch_path=pucrunch_path, rgbds_path=rgbds_path)
+        command = command.format(pucrunch_path=pucrunch_path, rgbds_path=rgbds_path, python=sys.executable)
         sys.stderr.write('-- `' + command + '` --\n')
-        result = subprocess.call(command)
+        result = subprocess.call(command, shell=True)
         if result:
             exit("\n*** Failed with error code {}.\n".format(result))
 

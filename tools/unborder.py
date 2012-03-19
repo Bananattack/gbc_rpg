@@ -1,4 +1,3 @@
-#!/bin/env python
 import array
 import itertools
 import os
