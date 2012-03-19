@@ -7,6 +7,8 @@ IF EXIST a.zhr del a.zhr
 
 python tools/img2gb.py -oldfart resources/tiles/a.png
 IF ERRORLEVEL 1 GOTO Done
+python tools/img2gb.py resources/tiles/b.png
+IF ERRORLEVEL 1 GOTO Done
 python tools/textgen.py resources/text/messages.txt
 IF ERRORLEVEL 1 GOTO Done
 
