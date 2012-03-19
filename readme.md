@@ -8,11 +8,14 @@ Build Requirements
 ------------------
 * Python 2.7
 * PIL
-* RGBDS (Windows version included). For other platforms [this assembler](https://github.com/bentley/rgbds) might be able to build it.
+* RGBDS (Windows version included). For other platforms, use build [from source](https://github.com/bentley/rgbds).
+* Pucrunch (Windows version included). For other platforms, build [from source](http://www.cs.tut.fi/~albert/Dev/pucrunch/#Progs) -- it's pretty simple.
 
 How to Build
 ------------
-On Windows, run `build.bat` When it successfully compiles, you should have a `hello.gb` file to run and play with. Enjoy!
+On Windows, run `build.bat`. On other platforms, running `python2.7 build.py --pucrunch-bin=PATH --rgbds-bin=PATH` will do the trick.
+
+When it successfully compiles, you should have a `hello.gb` file to run and play with. Enjoy!
 
 Hardware Compatibility
 ----------------------

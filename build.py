@@ -1,3 +1,5 @@
+import os
+
 PRE_CLEAN = ['hello.obj', 'hello.sym', 'hello.map', 'hello.gb', 'a.chr', 'b.chr', 'b.zhr']
 
 COMMANDS = [
@@ -7,16 +9,15 @@ COMMANDS = [
     '{python} tools/itemdump.py resources/data/items --format=texts --out=resources/data/items.auto.txt',
     '{python} tools/textgen.py resources/data/items.auto.txt',
     '{python} tools/textgen.py resources/text/messages.txt',
-    '{pucrunch_path}/pucrunch -d -c0 resources/tiles/b.chr resources/tiles/b.zhr',
-    '{rgbds_path}/rgbasm -ohello.obj code/main.z80',
-    '{rgbds_path}/rgblink -mhello.map -nhello.sym -ohello.gb hello.obj',
-    '{rgbds_path}/rgbfix -p0 -v hello.gb'
+    os.path.join('{pucrunch_path}', 'pucrunch') + ' -d -c0 resources/tiles/b.chr resources/tiles/b.zhr',
+    os.path.join('{rgbds_path}', 'rgbasm') + ' -ohello.obj code/main.z80',
+    os.path.join('{rgbds_path}', 'rgblink') + ' -mhello.map -nhello.sym -ohello.gb hello.obj',
+    os.path.join('{rgbds_path}', 'rgbfix') +' -p0 -v hello.gb'
 ]
 
 POST_CLEAN = ['hello.obj', 'hello.sym', 'hello.map']
 
 if __name__ == '__main__':
-    import os
     import sys
     import subprocess
 
