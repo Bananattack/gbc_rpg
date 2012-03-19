@@ -19,11 +19,11 @@ INCLUDE "code/item_menu.z80"
 
 main:
     ; Disable interrupts.
-	di
+    di
     
     ; Reset the stack pointer.
-	ld hl, stack_top
-	ld sp, hl
+    ld hl, stack_top
+    ld sp, hl
     
     ; Check what hardware we're running.
     ; Put the status of the check into d right now, since we have to clear RAM before storing it in RAM.
