@@ -7,7 +7,7 @@ A short and sweet old-school RPG for the Game Boy Color. Hoping to try some fun 
 Build Requirements
 ------------------
 * Python 2.7
-* PIL
+* PIL (Python Imaging Library)
 * RGBDS (Windows version included). For other platforms, build [from source](https://github.com/bentley/rgbds).
 * Pucrunch (Windows version included). For other platforms, build [from source](http://www.cs.tut.fi/~albert/Dev/pucrunch/).
 
