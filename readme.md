@@ -15,9 +15,8 @@ How to Build
 ------------
 * On Windows, run `build.bat`.
 * On other platforms, run:
+    `python2.7 build.py --pucrunch-bin=PATH --rgbds-bin=PATH`
 
-    python2.7 build.py --pucrunch-bin=PATH --rgbds-bin=PATH
-    
 
 When it successfully compiles, you should have a `hello.gb` file to run and play with. Enjoy!
 
