@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-import os
-import sys
-import subprocess
 
 PRE_CLEAN = ['hello.obj', 'hello.sym', 'hello.map', 'hello.gb', 'a.chr', 'b.chr', 'b.zhr']
 
@@ -19,6 +16,11 @@ COMMANDS = [
 ]
 
 POST_CLEAN = ['hello.obj', 'hello.sym', 'hello.map']
+
+
+import os
+import sys
+import subprocess
 
 sys.stderr.write('>> Pre-build Cleanup...\n')
 for filename in PRE_CLEAN:
