@@ -8,6 +8,7 @@ Build Requirements
 ------------------
 * Python 2.7
 * PIL
+* RGBDS (Windows version included), don't know if [this assembler](https://github.com/bentley/rgbds) can build it yet, for other platforms. Worth trying.
 
 How to Build
 ------------
