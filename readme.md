@@ -1,6 +1,6 @@
 Dungeon Crawler (Game Boy Color homebrew)
 =========================================
-***by Overkill and Kramlack***
+***by Overkill (code) and Kramlack (art)***
 
 A short and sweet old-school RPG for the Game Boy Color. Hoping to try some fun tricks on the Gameboy hardware, and make a fun game out of it. Written in Z80 assembly, compiled with RGBDS, some command-line utilities are written in Python. It's got a *while* to go still, but we have some of the preliminary systems in: scrolling, textboxes, some menus, and a few art assets. I would say it's about super-early pre-alpha tech demo stage at the moment, not feature complete by any means.
 
