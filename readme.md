@@ -1,6 +1,6 @@
 Dungeon Crawler (Game Boy Color homebrew)
 =========================================
-###by Overkill and Kramlack
+***by Overkill and Kramlack***
 
 Description
 -----------
