@@ -23,7 +23,7 @@ When it successfully compiles, you should have a `hello.gb` file to run and play
 Hardware Compatibility
 ----------------------
 
-This is intended to work all Game Boy and Game Boy Color hardware iterations. Here is the current status of things (? means that no confirmation has been made):
+This is intended to work all Game Boy and Game Boy Color hardware iterations. Here's the current state of things (`?` means that it has not been checked yet):
 
 * Game Boy - ?
 * Game Boy Advance - ?
