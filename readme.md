@@ -2,23 +2,22 @@ Dungeon Crawler (GameBoy Color homebrew)
 ----------------------------------------
 *by Overkill and Kramlack*
 
-* Title: *TBA*
-* Release Date: *TBA*
-* Platform: Game Boy Color
+Details:
+* Title - To be announced.
+* Release Date - To be announced.
+* Platform - Game Boy Color.
 
 A short and sweet old-school RPG for the Game Boy Color. Hoping to try some fun tricks on the Gameboy hardware, and make a fun game out of it. Written in Z80 assembly, compiled with RGBDS, some command-line utilities are written in Python. It's got a while to go still, but we have scrolling, textboxes, some menus, and a few art assets.
 
-Requirements
-------------
+Build Requirements
+------------------
 * Python 2.7
 * PIL
-* A Game Boy (Color) emulator
 
 How to Build
 ------------
 
-* Run `build.bat`
-* When it successfully compiles, you should have a `hello.gb` file to run and play with. Enjoy!
+Run `build.bat`. When it successfully compiles, you should have a `hello.gb` file to run and play with. Enjoy!
 
 Compatibility
 -------------
@@ -29,4 +28,6 @@ Compatibility
 
 License
 -------
-Copyright (C) 2011 Andrew G. Crowell (Overkill) and Kale Kramlack (Kramlack). All work is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License](http://creativecommons.org/licenses/by-nc-sa/3.0/).
+Copyright (C) 2011 Andrew G. Crowell (Overkill) and Kale Kramlack (Kramlack).
+
+All work is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License](http://creativecommons.org/licenses/by-nc-sa/3.0/).
