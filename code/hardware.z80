@@ -1,0 +1,160 @@
+gb_timer_div        EQU $FF04
+gb_timer            EQU $FF05
+gb_timer_mod        EQU $FF06
+gb_timer_ctrl       EQU $FF07
+
+gb_ch1_sweep        EQU $FF10
+gb_ch1_length       EQU $FF11
+gb_ch1_envelope     EQU $FF12
+gb_ch1_freq_lo      EQU $FF13
+gb_ch1_freq_hi      EQU $FF14
+gb_ch2_length       EQU $FF16
+gb_ch2_envelope     EQU $FF17
+gb_ch2_freq_lo      EQU $FF18
+gb_ch2_freq_hi      EQU $FF19
+gb_ch3_enabled      EQU $FF1A
+gb_ch3_length       EQU $FF1B
+gb_ch3_volume       EQU $FF1C
+gb_ch3_freq_lo      EQU $FF1D
+gb_ch3_freq_hi      EQU $FF1E
+gb_ch4_length       EQU $FF20
+gb_ch4_envelope     EQU $FF21
+gb_ch4_poly_counter EQU $FF22
+gb_ch4_loop         EQU $FF22
+gb_snd_volume       EQU $FF24
+gb_snd_pan          EQU $FF25
+gb_snd_stat         EQU $FF26
+
+GB_SND_STAT_CH1_ON  EQU $01
+GB_SND_STAT_CH2_ON  EQU $02
+GB_SND_STAT_CH3_ON  EQU $04
+GB_SND_STAT_CH4_ON  EQU $08
+GB_SND_STAT_MUTE    EQU $00
+GB_SND_STAT_UNMUTE  EQU $80
+
+gb_lcd_ctrl         EQU $FF40
+gb_lcd_stat         EQU $FF41
+gb_scroll_y         EQU $FF42
+gb_scroll_x         EQU $FF43
+gb_line_y           EQU $FF44
+gb_line_y_cmp       EQU $FF45
+gb_win_y            EQU $FF4A
+gb_win_x            EQU $FF4B
+gb_joypad           EQU $FF00
+gb_irq_flag         EQU $FF0F
+gb_irq_enable       EQU $FFFF
+
+dmg_bg_pal          EQU $FF47
+dmg_oam_pal         EQU $FF48
+dmg_oam_pal2        EQU $FF49
+
+gbc_bg_pal_addr     EQU $FF68
+gbc_bg_pal_data     EQU $FF69
+gbc_oam_pal_addr    EQU $FF6A
+gbc_oam_pal_data    EQU $FF6B
+gbc_vram_bank       EQU $FF4F
+
+mbc_ram_enable      EQU $0000
+mbc_rom_bank        EQU $2000
+mbc_ram_bank        EQU $A000
+
+GB_LCD_BG_ON        EQU $01
+GB_LCD_SPR_ON       EQU $02
+GB_LCD_SPR_8x8      EQU $00
+GB_LCD_SPR_8x16     EQU $04
+GB_LCD_BG_MAP_1     EQU $00
+GB_LCD_BG_MAP_2     EQU $08
+GB_LCD_TILES_1      EQU $10
+GB_LCD_TILES_2      EQU $00 ; Yes, I consider this tileset 2, because I like lower addresses to come earlier.
+GB_LCD_WIN_ON       EQU $20
+GB_LCD_WIN_MAP_1    EQU $00
+GB_LCD_WIN_MAP_2    EQU $40
+GB_LCD_ON           EQU $80
+
+GB_LCD_BIT_BG       EQU 0
+GB_LCD_BIT_SPR      EQU 1
+GB_LCD_BIT_SPR_SIZE EQU 2
+GB_LCD_BIT_WIN      EQU 5
+
+GB_STAT_MODE_MASK   EQU $03 ; Bitwise & with this, to get current mode
+GB_STAT_MODE_HBLANK EQU $00
+GB_STAT_MODE_VBLANK EQU $01
+GB_STAT_MODE_OAM    EQU $02
+GB_STAT_MODE_XFER   EQU $03
+GB_STAT_LINE_Y_EQ   EQU $04
+GB_STAT_IRQ_HBLANK  EQU $08
+GB_STAT_IRQ_VBLANK  EQU $10
+GB_STAT_IRQ_OAM     EQU $20
+GB_STAT_IRQ_LINE_Y  EQU $40
+
+GB_JOY_VIEW_DPAD    EQU $20 ; View Up/Down/Left/Right.
+GB_JOY_VIEW_BUTTONS EQU $10 ; View A/B/Select/Start.
+
+GB_IRQ_VBLANK       EQU $01
+GB_IRQ_STAT         EQU $02
+GB_IRQ_TIMER        EQU $04
+GB_IRQ_SERIAL       EQU $08
+GB_IRQ_JOYPAD       EQU $10
+
+gb_wave_ram         EQU $FF30
+gb_vram_tiles       EQU $8000
+gb_vram_maps        EQU $9800
+gb_vram_map_1       EQU $9800
+gb_vram_map_2       EQU $9C00
+
+GB_WAVE_RAM_SIZE    EQU $20
+GB_VRAM_MAP_WIDTH   EQU 32
+GB_VRAM_MAP_HEIGHT  EQU 32
+GB_VRAM_MAP_SIZE    EQU 1024
+GB_VRAM_TILES_BANK  EQU 256
+GB_VRAM_TILES_MAX   EQU 384
+
+GB_SCREEN_WIDTH     EQU 160
+GB_SCREEN_HEIGHT    EQU 144
+
+GB_BUSY_WAIT_FOR_VBLANK: MACRO
+.wait_for_vblank_\@:
+    ; repeat
+        ldh a, [gb_lcd_stat]
+        and GB_STAT_MODE_MASK
+        cp GB_STAT_MODE_VBLANK
+        jr nz, .wait_for_vblank_\@
+    ; until gb_lcd_stat & GB_STAT_MODE_VBLANK == 0
+ENDM
+
+GB_WAIT_FOR_HBLANK: MACRO
+    ; Wait for hblank, so it's safe to update the screen.
+    ; We need to wait, and we can't risk missing the scanline.
+    ; If the timing is off, things will flicker. So this happens first.
+.wait_for_hblank_\@:
+    ; repeat
+        ldh a, [gb_lcd_stat]
+        and GB_STAT_MODE_MASK
+        cp GB_STAT_MODE_HBLANK
+        jr nz, .wait_for_hblank_\@
+    ; until gb_lcd_stat & GB_STAT_MODE_HBLANK == 0
+ENDM
+
+GB_DISPLAY_DISABLE: MACRO
+    GB_BUSY_WAIT_FOR_VBLANK
+    
+    ; Turn off display.
+	xor a, a
+	ldh [gb_lcd_ctrl], a
+ENDM
+
+GBC_VRAM_SWITCH_BANK: MACRO
+__BANK  = \1
+    ld a, __BANK
+    ldh [gbc_vram_bank], a
+ENDM
+
+GBC_RGB_DATA: MACRO
+__R = \1
+__G = \2
+__B = \3
+__G = __G << 5
+__B = __B << 10
+    ; 0BBBBBGGGGGRRRRR
+    DW __R | __G | __B
+ENDM

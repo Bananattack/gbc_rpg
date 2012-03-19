@@ -1,0 +1,278 @@
+INCLUDE "code/hardware.z80"
+INCLUDE "code/bss.z80"
+
+; Main code section:
+SECTION "main", HOME
+
+; Header junk for GB boot. (MUST APPEAR AS FIRST PART OF THE HOME SECTION)
+INCLUDE "code/boot.z80"
+
+; Library dependencies.
+INCLUDE "code/joy.z80"          ; Handling the joypad controls.
+INCLUDE "code/utility.z80"      ; Useful utility stuff, like memory transfer stuff.
+INCLUDE "code/graphics.z80"     ; The rendering and tilemap handling routines.
+INCLUDE "code/pucrunch.z80"     ; Pucrunch decompression library.
+INCLUDE "code/map.z80"          ; The rendering and tilemap handling routines.
+INCLUDE "code/textbox.z80"      ; The textbox system.
+INCLUDE "code/menu.z80"         ; The menu system.
+INCLUDE "code/item_menu.z80"
+
+main:
+    ; Disable interrupts.
+	di
+    
+    ; Reset the stack pointer.
+	ld hl, stack_top
+	ld sp, hl
+    
+    ; Check what hardware we're running.
+    ; Put the status of the check into d right now, since we have to clear RAM before storing it in RAM.
+    ld d, 0 ; Original GB. d = 0.
+    cp $11
+    jr nz, .done_hardware_check
+    ; if a == 11, then we have color capabilities.
+        inc d ; Gameboy Color. d = 1.
+        bit 0, b
+        ; if b & 1 == 1, then we're a GBA.
+        jr nz, .done_hardware_check
+            inc d ; Gameboy Advance. d = 2.
+        ; end
+    ; end
+.done_hardware_check:
+    
+    GB_DISPLAY_DISABLE
+    
+    ; Clear WRAM.
+    ld hl, $C000
+    ld a, 0
+    ld bc, $2000
+    MEMSET
+    
+    ; Save d into hardware_type, now that RAM is clear.
+    ld a, d
+    ld [hardware_type], a
+    
+    ; Load libraries.
+    GFX_LOADLIB
+        
+    ; Setup secondary ROM bank.
+    SWITCH_ROM_BANK 1
+    ld a, 1
+    ld [step_event_bank], a
+    ld [scan_event_bank], a
+    ld [draw_event_bank], a
+    
+    ; Clear MAP
+    ld hl, gb_vram_map_1
+    ld a, 0
+    ld bc, $800
+    call memset
+    
+    ; Load tileset graphics.
+    ld bc, GB_VRAM_TILES_MAX ; Tile count
+    ld de, gb_vram_tiles
+    ld hl, tiles
+    call gfx_load_tiles
+   
+    ; Init map size.
+    ld hl, 64
+    ld a, l
+    ld [map_width_lo], a
+    ld a, h
+    ld [map_width_hi], a
+    
+    ld hl, 64
+    ld a, l
+    ld [map_height_lo], a
+    ld a, h
+    ld [map_height_hi], a
+    
+    ; Shift = log2(width)
+    ld a, 6
+    ld [map_width_shift], a
+   
+    ; Load map.
+    ld a, GB_VRAM_MAP_WIDTH / 2
+    ld [t0], a
+    ld a, GB_VRAM_MAP_HEIGHT
+    ld [t1], a
+    ld bc, metatiles
+    ld de, gb_vram_map_1
+    ld hl, world1_map
+    call gfx_load_map
+
+enable_display:
+    ; Initialize textbox system.
+    call textbox_init
+
+    ; Reset the tile buffer.
+    call map_begin_tile_buffer
+    call map_end_tile_buffer
+
+    ; Copy sprites.
+    ld h, sprite_buffer >> 8
+    call gfx_sprite_copy
+
+    ; Setup scanline interrupt.
+    ld a, [scan_scanline]
+    ldh [gb_line_y_cmp], a
+    ld a, GB_STAT_IRQ_LINE_Y
+    ldh [gb_lcd_stat], a
+
+    ; Start window at (x - 7, y) = (0, 0).
+    ld a, 7
+    ldh [gb_win_x], a
+    ld a, 96
+    ldh [gb_win_y], a
+
+    ; We want VBLANK and STAT interrupts, the next time we have interrupts enabled.
+    ld a, GB_IRQ_VBLANK | GB_IRQ_STAT
+    ldh [gb_irq_enable], a
+
+    ; Visual Boy advance bug: Switch bank once disable screen again
+    ; before changing palettes, so it won't flash something off-screen
+    ; while the display is disabled.
+    ld a, GB_LCD_ON | GB_LCD_WIN_MAP_2 | GB_LCD_TILES_2 | GB_LCD_WIN_ON | GB_LCD_SPR_ON | GB_LCD_BG_ON
+    ldh [gb_lcd_ctrl], a
+    GB_DISPLAY_DISABLE
+    ld a, [hardware_type] ; Check hardware type.
+    or a, a
+    jr nz, .else
+        ; Load greyscale palette.
+        call gfx_load_pal_greyscale
+        jr .done
+.else:
+        ; Load BG palette.
+        ld b, 0 ; Start palette index
+        ld c, 32 ; Color count
+        ld d, GFX_PAL_BG ; Dest
+        ld hl, background_palette ; Source
+        call gfx_load_pal_color
+        
+        ; Load OAM palette.
+        ld b, 0 ; Start palette index
+        ld c, 32 ; Color count
+        ld d, GFX_PAL_OAM ; Dest
+        ld hl, sprite_palette ; Source
+        call gfx_load_pal_color
+        
+        ; Setup bank for the tileset load happening soon.
+        GBC_VRAM_SWITCH_BANK 0
+.done:
+    ; end
+
+    ; Now actually enable the screen
+    ld a, GB_LCD_ON | GB_LCD_WIN_MAP_2 | GB_LCD_TILES_2 | GB_LCD_WIN_ON | GB_LCD_SPR_ON | GB_LCD_BG_ON
+    ldh [gb_lcd_ctrl], a
+    ; Enable interrupts.
+    ei
+
+    ; Prepare the map loop.
+    call map_start
+    
+main_loop:
+; The main game loop.
+; Usually runs once per frame, but it may take longer than that.
+; For instance, when it's busy loading compressed resources: That can take a while.
+    CALL_EVENT_SAFE step_event_lo, step_event_hi, step_event_bank
+    call request_redraw
+    jr main_loop
+
+stat:
+; Called mid-frame, to perform HUD effects, and allow some concurrent update logic.
+; Update logic should be things that do not require large load time.
+    CALL_EVENT_INTERRUPT scan_event_lo, scan_event_hi, scan_event_bank
+    INTERRUPT_RETURN
+; end
+  
+draw:
+; Called at the end of every frame, mainly to do graphical things.
+    ; Call draw event.
+    CALL_EVENT_INTERRUPT draw_event_lo, draw_event_hi, draw_event_bank
+
+    ; Prepare next stat interrupt.
+    ld a, [scan_scanline]
+    ldh [gb_line_y_cmp], a
+    
+    
+    ; If we somehow hit 99 hours, don't update the timer.
+    ld a, [timer_hours]
+    cp a, 99
+    jr z, .done_timer_increment
+    ; Advance the timer.
+    ld hl, timer_steps
+    ld a, [hl]
+    inc a
+    ld [hl], a
+    cp 60
+    jr nz, .done_timer_increment
+        ; Reset steps.
+        xor a, a
+        ; Seconds.
+        ld [hl+], a
+        ld a, [hl]
+        inc a
+        ld [hl], a
+        cp 60
+        jr nz, .done_timer_increment
+            ; Reset seconds.
+            xor a, a
+            ; Minutes.
+            ld [hl+], a
+            ld a, [hl]
+            inc a
+            ld [hl], a
+            cp 60
+            jr nz, .done_timer_increment
+                ; Reset minutes.
+                xor a, a
+                ; Hours.
+                ld [hl+], a
+                ld a, [hl]
+                inc a
+                ld [hl], a
+.done_timer_increment:
+
+    
+    INTERRUPT_RETURN
+; end
+
+request_redraw:
+    ; Request redraw.
+    ; Until this flag is set, the full draw logic will not be run.
+    ; (This prevents writing/executing incomplete memory buffers.)
+    ld hl, redraw_request
+    ld a, 1
+    ld [hl], a
+    
+    ; repeat
+.redraw_wait:
+        halt ; Save some battery power!
+        ld a, [hl]
+        or a, a
+        jr nz, .redraw_wait
+    ; until a == 0
+    ret
+
+handle_redraw:
+    ; Should we redraw?
+    ld hl, redraw_request
+    ld a, [hl]
+    or a, a
+    jr z, .draw_skip_redraw
+    ; if redraw_request then
+        call map_buf_data
+    
+        ; Copy sprites.
+        ld h, sprite_buffer >> 8
+        call gfx_sprite_copy
+        
+        ; We're done drawing.
+        ld hl, redraw_request
+        ld a, 0
+        ld [hl], a
+.draw_skip_redraw:
+    ; end
+    ret
+
+INCLUDE "code/resources.z80"

@@ -1,0 +1,570 @@
+;*
+;*
+;* PUCRUNCH unpacker for GB
+;*   Modeled after Pasi Ojala's C64 code.
+;*
+;*   Written in RGBDS
+;*
+;*  V1.0 - Ported to GB by Jeff Frohwein, started 22-Jul-99
+;*  V1.1 - Various optimizations, 23-Jul-99
+;*  V1.2 - Even more optimizations, 23-Jul-99
+;*  V1.3 - Fixed a bug in the code. 256 byte copy didn't work. 24-Feb-00
+;*
+;* Note: If you unpack to VRAM than the screen needs to be
+;* turned off because no checks for VRAM available are made.
+
+; Pucrunch file format
+
+;;; db INPOS low     (endAddr + overlap - size) & 0xff
+;;; db INPOS high    (endAddr + overlap - size) >> 8
+;;; db 'p'
+;;; db 'u'
+;;; db (endAddr - 0x100) & 0xff
+;;; db (endAddr - 0x100) >> 8
+; db escape>>(8-_pucrunch_EscBits)
+;;; db (start & 0xff) (OUTPOS low)
+;;; db (start >> 8) (OUTPOS high)
+; db _pucrunch_EscBits
+; db _pucrunch_MaxGamma + 1
+; db (1<<_pucrunch_MaxGamma); /* Short/Long RLE */
+; db extraLZPosBits;
+;;; db (exec & 0xff)
+;;; db (exec >> 8)
+; db rleUsed (31)  ;needed
+; ds rleUsed
+;  ....data....
+
+
+
+;* _pucrunch_ld16 RP1,RP2 - 2 bytes, 8 cycles
+;* _pucrunch_ld16 RP1,ADDR2 - 10 bytes, 68 cycles
+;* _pucrunch_ld16 ADDR1,RP2 - 10 bytes, 68 cycles
+;* _pucrunch_ld16 ADDR1,ADDR2 - 14 bytes, 92 cycles
+;*    Load RP1 (bc,de, or hl) or ADDR1 with
+;*   16-bit contents of RP2 (bc,de, or hl) or ADDR2.
+
+_pucrunch_ld16:   MACRO
+__p1    EQUS    STRLWR("\1")
+__p2    EQUS    STRLWR("\2")
+        IF      (STRCMP("{__p1}","bc")==0) || (STRCMP("{__p1}","de")==0) || (STRCMP("{__p1}","hl")==0)
+; _pucrunch_ld16 rp,?
+__d1    EQUS    STRSUB("\1",1,1)
+__d2    EQUS    STRSUB("\1",2,1)
+
+          IF      (STRCMP("{__p2}","bc")==0) || (STRCMP("{__p2}","de")==0) || (STRCMP("{__p2}","hl")==0)
+; _pucrunch_ld16 rp,rp
+__s1    EQUS    STRSUB("\2",1,1)
+__s2    EQUS    STRSUB("\2",2,1)
+
+            ld      __d2,__s2
+            ld      __d1,__s1
+
+            PURGE   __s1,__s2
+          ELSE
+; _pucrunch_ld16 rp,Addr
+            push    af
+            ld      a,[\2]
+            ld      __d2,a
+            ld      a,[\2+1]
+            ld      __d1,a
+            pop     af
+          ENDC
+
+          PURGE   __d1,__d2
+        ELSE
+          IF      (STRCMP("{__p2}","bc")==0) || (STRCMP("{__p2}","de")==0) || (STRCMP("{__p2}","hl")==0)
+; _pucrunch_ld16 Addr,rp
+__s1    EQUS    STRSUB("\2",1,1)
+__s2    EQUS    STRSUB("\2",2,1)
+
+            push    af
+            ld      a,__s2
+            ld      [\1],a
+            ld      a,__s1
+            ld      [\1+1],a
+            pop     af
+
+            PURGE   __s1,__s2
+          ELSE
+; _pucrunch_ld16 Addr,Addr
+            push    af
+            ld      a,[\2]
+            ld      [\1],a
+            ld      a,[\2+1]
+            ld      [\1+1],a
+            pop     af
+          ENDC
+        ENDC
+
+        PURGE   __p1,__p2
+
+        ENDM
+
+;* _pucrunch_ld16r RP1,ADDR2 - 8 bytes, 40 cycles
+;* _pucrunch_ld16r ADDR1,RP2 - 8 bytes, 40 cycles
+;* _pucrunch_ld16r ADDR1,ADDR2 - 12 bytes, 64 cycles
+;*    Load RP1 (bc,de, or hl) or ADDR1 with
+;*   16-bit contents of RP2 (bc,de, or hl) or ADDR2.
+
+_pucrunch_ld16r:  MACRO
+__p1    EQUS    STRLWR("\1")
+__p2    EQUS    STRLWR("\2")
+        IF      (STRCMP("{__p1}","bc")==0) || (STRCMP("{__p1}","de")==0) || (STRCMP("{__p1}","hl")==0)
+; _pucrunch_ld16r rp,?
+__d1    EQUS    STRSUB("\1",1,1)
+__d2    EQUS    STRSUB("\1",2,1)
+
+          IF      (STRCMP("{__p2}","bc")==0) || (STRCMP("{__p2}","de")==0) || (STRCMP("{__p2}","hl")==0)
+; _pucrunch_ld16r rp,rp
+
+            FAIL   "Error: Use '_pucrunch_ld16 rp,rp' instead."
+
+          ELSE
+; _pucrunch_ld16r rp,Addr
+            ld      a,[\2]
+            ld      __d2,a
+            ld      a,[\2+1]
+            ld      __d1,a
+          ENDC
+
+          PURGE   __d1,__d2
+        ELSE
+          IF      (STRCMP("{__p2}","bc")==0) || (STRCMP("{__p2}","de")==0) || (STRCMP("{__p2}","hl")==0)
+; _pucrunch_ld16r Addr,rp
+__s1    EQUS    STRSUB("\2",1,1)
+__s2    EQUS    STRSUB("\2",2,1)
+
+            ld      a,__s2
+            ld      [\1],a
+            ld      a,__s1
+            ld      [\1+1],a
+
+            PURGE   __s1,__s2
+          ELSE
+; _pucrunch_ld16r Addr,Addr
+            ld      a,[\2]
+            ld      [\1],a
+            ld      a,[\2+1]
+            ld      [\1+1],a
+          ENDC
+        ENDC
+
+        PURGE   __p1,__p2
+
+        ENDM
+
+        PUSHS
+
+        SECTION "Pucrunch Vars",BSS
+
+;_pucrunch_bitstr          DB
+_pucrunch_escPu           DB
+;_pucrunch_InPtr           DW
+_pucrunch_OutPtr          DW
+;_pucrunch_regx            DB
+;_pucrunch_regy            DB
+_pucrunch_lzpos           DW
+_pucrunch_EscBits         DB
+_pucrunch_Esc8Bits        DB
+_pucrunch_MaxGamma        DB
+_pucrunch_Max1Gamma       DB
+_pucrunch_Max2Gamma       DB
+_pucrunch_Max8Gamma       DB
+_pucrunch_ExtraBits       DB
+_pucrunch_tablePu         DS      31
+_pucrunch_regy            DB
+
+        POPS
+
+; HL = _pucrunch_InPtr
+; D = _pucrunch_bitstr
+; E = X
+; BC = temps
+
+; ****** Unpack pucrunch data ******
+; Entry: HL = Source packed data
+;        DE = Destination for unpacked data
+
+pucrunch_unpack:
+        _pucrunch_ld16r   _pucrunch_OutPtr,de
+
+; Read the file header & setup variables
+
+        ld      bc,6
+        add     hl,bc
+
+        ld      a,[hl+]
+        ld      [_pucrunch_escPu],a
+
+        inc     hl
+        inc     hl
+
+        ld      a,[hl+]
+        ld      [_pucrunch_EscBits],a
+        ld      b,a
+
+        ld      a,8
+        sub     b
+        ld      [_pucrunch_Esc8Bits],a
+
+        ld      a,[hl+]
+        ld      [_pucrunch_MaxGamma],a
+        dec     a
+        ld      b,a
+        ld      a,8
+        sub     b
+        ld      [_pucrunch_Max8Gamma],a
+
+        ld      a,[hl+]
+        ld      [_pucrunch_Max1Gamma],a
+        add     a
+        dec     a
+        ld      [_pucrunch_Max2Gamma],a
+
+        ld      a,[hl+]
+        ld      [_pucrunch_ExtraBits],a
+
+        inc     hl
+        inc     hl
+
+        ld      a,[hl+]
+        ld      b,a
+
+        ld      de,_pucrunch_tablePu
+
+; Copy the RLE table (maximum of 31 bytes) to RAM
+
+        inc     b
+        srl     b
+        jr      nc,.orleloop
+
+.rleloop:
+        ld      a,[hl+]
+        ld      [de],a
+        inc     de
+
+.orleloop:
+        ld      a,[hl+]
+        ld      [de],a
+        inc     de
+
+        dec     b
+        jr      nz,.rleloop
+
+
+
+        ld      d,$80
+
+        jr      .main
+
+
+.newesc:
+        ld      b,a
+
+        ld      a,[_pucrunch_escPu]
+        ld      [_pucrunch_regy],a
+
+        ld      a,[_pucrunch_EscBits]
+        ld      e,a
+
+        ld      a,b
+
+        inc     e
+
+        call    .getchk
+
+        ld      [_pucrunch_escPu],a
+
+        ld      a,[_pucrunch_regy]
+
+        ; Fall through and get the rest of the bits.
+
+.noesc:
+        ld      b,a
+
+        ld      a,[_pucrunch_Esc8Bits]
+        ld      e,a
+
+        ld      a,b
+
+        inc     e
+
+        call    .getchk
+
+; Write out the escaped/normal byte
+
+        _pucrunch_ld16    bc,_pucrunch_OutPtr
+        ld      [bc],a
+        inc     bc
+        _pucrunch_ld16r   _pucrunch_OutPtr,bc
+
+       ; Fall through and check the escape bits again
+
+.main:
+        ld      a,[_pucrunch_EscBits]
+        ld      e,a
+
+        xor     a               ; A = 0
+        ld      [_pucrunch_regy],a
+
+        inc     e
+
+        call    .getchk         ; X=2 -> X=0
+
+        ld      b,a
+        ld      a,[_pucrunch_escPu]
+        cp      b
+        ld      a,b
+
+        jr      nz,.noesc       ; Not the escape code -> get the rest of the byte
+
+        ; Fall through to packed code
+
+        call    .getval         ; X=0 -> X=0
+
+        ld      [_pucrunch_lzpos],a       ; xstore - save the length for a later time
+
+        srl     a               ; cmp #1        ; LEN == 2 ? (A is never 0)
+        jp      nz,.lz77        ; LEN != 2      -> LZ77
+
+        call    .get1bit        ; X=0 -> X=0
+
+        srl     a               ; bit -> C, A = 0
+
+        jp      nc,.lz77_2      ; A=0 -> _pucrunch_lzpos+1        LZ77, len=2
+
+	; e..e01
+        call    .get1bit        ; X=0 -> X=0
+        srl     a               ; bit -> C, A = 0
+        jp      nc,.newesc      ; e..e010               New Escape
+
+	; e..e011				Short/Long RLE
+        ld      a,[_pucrunch_regy]        ; Y is 1 bigger than MSB loops
+        inc     a
+        ld      [_pucrunch_regy],a
+
+        call    .getval         ; Y is 1, get len,  X=0 -> X=0
+        ld      [_pucrunch_lzpos],a       ; xstore - Save length LSB
+
+        ld      c,a
+
+        ld      a,[_pucrunch_Max1Gamma]
+        ld      b,a
+
+        ld      a,c
+
+        cp      b               ; ** PARAMETER 63-64 -> C set, 64-64 -> C clear..
+
+        jr      c,.chrcode      ; short RLE, get bytecode
+
+	; Otherwise it's long RLE
+.longrle:
+        ld      b,a
+        ld      a,[_pucrunch_Max8Gamma]
+        ld      e,a             ; ** PARAMETER  111111xxxxxx
+        ld      a,b
+
+        call    .getbits        ; get 3/2/1 more bits to get a full byte,  X=2 -> X=0
+        ld      [_pucrunch_lzpos],a       ; xstore - Save length LSB
+
+        call    .getval         ; length MSB, X=0 -> X=0
+
+        ld      [_pucrunch_regy],a        ; Y is 1 bigger than MSB loops
+
+.chrcode:
+        call    .getval         ; Byte Code,  X=0 -> X=0
+
+        ld      e,a
+
+        ld      c,(_pucrunch_tablePu-1)%256
+        add     c
+        ld      c,a
+        ld      a,(_pucrunch_tablePu-1)/256
+        adc     0
+        ld      b,a
+
+        ld      a,e
+        cp      32              ; 31-32 -> C set, 32-32 -> C clear..
+        ld      a,[bc]
+        jr      c,.less32       ; 1..31
+
+	; Not ranks 1..31, -> 11111°xxxxx (32..64), get byte..
+
+        ld      a,e        ; get back the value (5 valid bits)
+
+        ld      e,3
+
+        call    .getbits        ; get 3 more bits to get a full byte, X=3 -> X=0
+
+.less32:
+        push    hl
+        push    af
+
+        ld      a,[_pucrunch_lzpos]
+        ld      e,a          ; xstore - get length LSB
+
+        ld      b,e
+        inc     b               ; adjust for cpx#$ff;bne -> bne
+
+        ld      a,[_pucrunch_regy]
+        ld      c,a
+
+        _pucrunch_ld16r   hl,_pucrunch_OutPtr
+
+        pop     af
+
+.dorle:
+        ld      [hl+],a
+
+        dec     b
+        jr      nz,.dorle       ; xstore 0..255 -> 1..256
+
+        dec     c
+        jr      nz,.dorle       ; Y was 1 bigger than wanted originally
+
+        _pucrunch_ld16r   _pucrunch_OutPtr,hl
+
+        pop     hl
+        jp      .main
+
+.lz77:
+        call    .getval         ; X=0 -> X=0
+
+        ld      b,a
+
+        ld      a,[_pucrunch_Max2Gamma]
+        cp      b               ; end of file ?
+        ret     z               ; yes, exit
+
+        ld      a,[_pucrunch_ExtraBits]   ; ** PARAMETER (more bits to get)
+        ld      e,a
+
+        ld      a,b
+
+        dec     a               ; subtract 1  (1..126 -> 0..125)
+
+        inc     e
+
+        call    .getchk ;f        ; clears Carry, X=0 -> X=0
+
+.lz77_2:
+        ld      [_pucrunch_lzpos+1],a     ; offset MSB
+
+        ld      e,8
+
+        call    .getbits        ; clears Carry, X=8 -> X=0
+
+                        ; Note: Already eor:ed in the compressor..
+        ld      b,a
+
+        ld      a,[_pucrunch_lzpos]
+        ld      e,a             ; xstore - LZLEN (read before it's overwritten)
+
+        ld      a,[_pucrunch_OutPtr]
+        add     b               ; -offset -1 + curpos (C is clear)
+        ld      [_pucrunch_lzpos],a
+
+        ld      a,[_pucrunch_lzpos+1]
+        ld      b,a
+
+        ld      a,[_pucrunch_OutPtr+1]
+        ccf
+        sbc     b
+        ld      [_pucrunch_lzpos+1],a     ; copy X+1 number of chars from _pucrunch_lzpos to OUTPOS
+
+        inc     e               ; adjust for cpx#$ff;bne -> bne
+
+; Write decompressed bytes out to RAM
+        ld      b,e
+
+        push    de
+        push    hl
+
+        _pucrunch_ld16r   hl,_pucrunch_lzpos
+        _pucrunch_ld16r   de,_pucrunch_OutPtr
+
+        ld      a,b
+        or      a               ; Is it zero?
+        jr      z,.zero         ; yes
+
+        inc     b
+        srl     b
+        jr      nc,.olzloop
+
+.lzloop:
+        ld      a,[hl+]         ; Note: Must be copied forward
+        ld      [de],a
+        inc     de
+.olzloop:
+        ld      a,[hl+]         ; Note: Must be copied forward
+        ld      [de],a
+        inc     de
+
+        dec     b
+        jr      nz,.lzloop      ; X loops, (256,1..255)
+
+        _pucrunch_ld16r   _pucrunch_OutPtr,de
+
+        pop     hl
+        pop     de
+        jp      .main
+
+.zero:
+        ld      b,128
+        jr      .lzloop
+
+; getval : Gets a 'static huffman coded' value
+; ** Scratches X, returns the value in A **
+.getval:                        ; X must be 0 when called!
+        ld      a,1
+        ld      e,a
+.loop0:
+        sla     d
+
+        jr      nz,.loop1
+
+        ld      d,[hl]
+        inc     hl
+
+        rl      d               ; Shift in C=1 (last bit marker)
+                                ; _pucrunch_bitstr initial value = $80 == empty
+.loop1:
+        jr      nc,.getchk      ; got 0-bit
+
+        inc     e
+
+        ld      b,a             ; save a
+
+        ld      a,[_pucrunch_MaxGamma]
+        cp      e
+
+        ld      a,b             ; restore a
+
+        jr      nz,.loop0
+
+        jr      .getchk
+
+
+; getbits: Gets X bits from the stream
+; ** Scratches X, returns the value in A **
+
+.get1bit:
+        inc     e
+.getbits:
+        sla     d
+
+        jr      nz,.loop3
+
+        ld      d,[hl]
+        inc     hl
+
+        rl      d               ; Shift in C=1 (last bit marker)
+                                ; _pucrunch_bitstr initial value = $80 == empty
+.loop3:
+        rla
+.getchk:
+        dec     e
+
+        jr      nz,.getbits
+        or      a       ; clear carry flag
+        ret

@@ -1,0 +1,36 @@
+; source resources/palettes/bgpal.png (rgb), 7 palettes, 28 total colors.
+; Palette 0
+DW $7FE0 ; #00FFFF
+DW $2C05 ; #28075A
+DW $4210 ; #808080
+DW $7FFF ; #F8F8F8
+; Palette 1
+DW $1C03 ; #1A053A
+DW $38A8 ; #402F71
+DW $6108 ; #4545C5
+DW $762D ; #6C8BE8
+; Palette 2
+DW $0007 ; #3A0505
+DW $1CE9 ; #4D3E3E
+DW $318E ; #736662
+DW $4631 ; #8C8A88
+; Palette 3
+DW $0007 ; #3A0505
+DW $0D0C ; #674018
+DW $09B7 ; #BE6A16
+DW $26DE ; #F7B648
+; Palette 4
+DW $76EB ; #58B8E8
+DW $7B4D ; #68D0F0
+DW $7F90 ; #80E0F8
+DW $7FF8 ; #C0F8F8
+; Palette 5
+DW $190A ; #504030
+DW $218F ; #786040
+DW $2A56 ; #B09050
+DW $3AD9 ; #C8B070
+; Palette 6
+DW $0CCC ; #61311F
+DW $7B4D ; #68D0F0
+DW $7F90 ; #80E0F8
+DW $7FF8 ; #C0F8F8

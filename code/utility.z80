@@ -1,0 +1,219 @@
+; Fills a range in memory with a specified byte value. (Inline version)
+MEMSET: MACRO
+; Dirty: bc, hl
+; Arguments:
+;   hl = destination
+;   a = value
+;   bc = count
+    inc c
+    inc b
+    jr .memset_first_iter_\@
+.memset_loop_\@:
+    ; repeat
+        ld [hl+], a
+.memset_first_iter_\@:
+        dec c
+        jr nz, .memset_loop_\@
+        ; if c == 0
+            dec b
+            jr nz, .memset_loop_\@
+            ; if b == 0, break.
+        ; end
+    ; end    
+ENDM
+
+; Fills a range in memory with a specified byte value. (Subroutine version)
+memset:
+; Dirty: bc, hl
+; Arguments:
+;   hl = destination
+;   a = value
+;   bc = count
+    MEMSET
+    ret
+
+; Copies count bytes from source to destination. (Inline version)
+MEMCPY: MACRO
+; Dirty: all registers
+; Arguments:
+;   hl = source
+;   de = destination
+;   bc = count
+    inc c
+    inc b
+    jr .memcpy_first_iter_\@
+.memcpy_loop_\@:
+    ; repeat
+        ld a, [hl+]
+        ld [de], a
+        inc de
+.memcpy_first_iter_\@:
+        dec c
+        jr nz, .memcpy_loop_\@
+        ; if c == 0
+            dec b
+            jr nz, .memcpy_loop_\@
+            ; if b == 0, break.
+        ; end
+    ; end
+ENDM
+
+; Copies count bytes from source to destination. (Subroutine version)
+memcpy:
+; Dirty: all registers
+; Arguments:
+;   hl = source
+;   de = destination
+;   bc = count
+    MEMCPY
+    ret
+
+; Indirect call to the address stored in hl.
+indirect_call:
+; Arguments:
+;   hl = destination address
+    jp [hl]
+
+; Busy wait until the next vblank. (Subroutine version)
+busy_wait_for_vblank:
+    GB_BUSY_WAIT_FOR_VBLANK
+    ret
+    
+; Cool wait until the next vblank. (Subroutine version)
+wait_for_hblank:
+    GB_WAIT_FOR_HBLANK
+    ret
+
+; Call an event in a far segment of code,
+; Defined by an event pointer formed by the macro args
+; \1 .. \2, that contains a low, and high address part.
+; If [\1] == [\2] == 0, nothing is called.    
+CALL_EVENT_LOCAL: MACRO
+; Dirty: all registers.
+; Arguments:
+;   \1 = low
+;   \2 = high
+;   \3 = bank
+    ld a, [\1]
+    ld l, a
+    ld a, [\2]
+    ld h, a
+    
+    or a, l ; A = H | L.
+    call nz, indirect_call ; if H | L != 0, then the stat event is set. Call!
+ENDM
+
+; Switch active MBC rom bank.
+SWITCH_ROM_BANK: MACRO
+; Dirty: a, [active_rom_bank]
+    ld a, \1
+    ld [active_rom_bank], a
+    ld [mbc_rom_bank], a
+ENDM
+
+; Switch active MBC ram bank.
+SWITCH_RAM_BANK: MACRO
+; Dirty: a, [active_ram_bank]
+    ld a, \1
+    ld [active_ram_bank], a
+    ld [mbc_ram_bank], a
+ENDM
+
+; Call a subroutine in another bank, and restore the old bank afterward.
+CALL_FAR: MACRO
+; Dirty: all registers, [active_rom_bank].
+; Arguments:
+;   \1 = bank
+;   \2 = destination address to `call`.
+    ; Switch to destination bank.
+    ld a, \1
+    ld [mbc_rom_bank], a
+    ; Call the subrotuine.
+    call \2
+    ; Restore "active" bank, whatever it was.
+    ld a, [active_rom_bank]
+    ld [mbc_rom_bank], a
+ENDM
+
+; Call an event in a far segment of code,
+; Defined by an event pointer formed by the macro args
+; \1 .. \3, that contains a lo, hi, and bank address part.
+; If [\1] == [\2] == 0, nothing is called.
+CALL_EVENT_SAFE: MACRO
+; Dirty: all registers.
+; Arguments:
+;   \1 = low
+;   \2 = high
+;   \3 = bank
+    ld a, [\1]
+    ld l, a
+    ld a, [\2]
+    ld h, a
+    
+    or a, l ; A = H | L.
+    jr z, .null_call_\@
+    ; if H | L != 0, then the stat event is set. Call!
+        ; Save the current active bank.
+        ld a, [active_rom_bank]
+        ld b, a
+        push bc
+        ; Change the active bank.
+        SWITCH_ROM_BANK [\3]
+        ; Call the thing.
+        CALL_FAR [\3], indirect_call
+        ; Restore the old active bank.
+        pop bc
+        SWITCH_ROM_BANK b
+.null_call_\@:
+ENDM
+
+; Call an event in a far segment of code,
+; Defined by an event pointer formed by the macro args
+; \1 .. \3, that contains a lo, hi, and bank address part.
+; If [\1] == [\2] == 0, nothing is called.
+CALL_EVENT_INTERRUPT: MACRO
+; Dirty: all registers.
+; Arguments:
+;   \1 = low
+;   \2 = high
+;   \3 = bank
+    ld a, [\1]
+    ld l, a
+    ld a, [\2]
+    ld h, a
+    
+    or a, l ; A = H | L.
+    jr z, .null_call_\@
+    ; if H | L != 0, then the stat event is set. Call!
+        CALL_FAR [\3], indirect_call
+.null_call_\@:
+ENDM
+
+; Converts a binary number into BCD representation.
+; Original code by "Norbert Juffa" <juffa@earthlink.net>.
+; Adapted to work with the GBZ80.
+to_bcd:
+; Dirty: all registers
+; Arguments:
+;   hl = 16-bit binary number
+; Result:
+;   c, d, e combine to form a 6-digit bcd number.
+    ld bc, $1000
+    ld de, $0000
+.loop:
+    add hl, hl
+    ld a, e
+    adc a, a
+    daa
+    ld e, a
+    ld a, d
+    adc a, a
+    daa
+    ld d, a
+    ld a, c
+    adc a, a
+    daa
+    ld c, a
+    dec b
+    jr nz, .loop
+    ret

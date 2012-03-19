@@ -1,0 +1,8 @@
+bgb.exe
+bgb.ini
+*.obj
+*.sym
+*.map
+*.gb
+*.chr
+*.zhr

@@ -1,0 +1,66 @@
+JOY_A       EQU $01
+JOY_B       EQU $02
+JOY_SELECT  EQU $04
+JOY_START   EQU $08
+JOY_RIGHT   EQU $10
+JOY_LEFT    EQU $20
+JOY_UP      EQU $40
+JOY_DOWN    EQU $80
+
+JOY_BIT_A       EQU 0
+JOY_BIT_B       EQU 1
+JOY_BIT_SELECT  EQU 2
+JOY_BIT_START   EQU 3
+JOY_BIT_RIGHT   EQU 4
+JOY_BIT_LEFT    EQU 5
+JOY_BIT_UP      EQU 6
+JOY_BIT_DOWN    EQU 7
+
+joy_check:
+    ; Read up/down/left/right.
+    ld a, GB_JOY_VIEW_DPAD
+    ldh [gb_joypad], a
+    
+    ; Read twice are to prevent bounce.
+    ldh a, [gb_joypad]
+    ldh a, [gb_joypad]
+    
+    xor $FF ; a = 0000dulr
+    and $0F ; a = 0000DULR
+    swap a  ; a = DULR0000
+
+    ld c, a ; controls = a
+    
+    ; Read A/B/Select/Start
+    ld a, GB_JOY_VIEW_BUTTONS
+    ldh [gb_joypad], a
+    
+    ; Read 6 times to prevent bounce.
+    ldh a, [gb_joypad]
+    ldh a, [gb_joypad]
+    ldh a, [gb_joypad]
+    ldh a, [gb_joypad]
+    ldh a, [gb_joypad]
+    ldh a, [gb_joypad]
+    
+    xor $FF ; a = 0000ssba
+    and $0F ; a = 0000SSBA
+    or c ; a = SSBADULR
+    ld c, a ; controls = a
+    
+    ; Remove unpress flag for controls no longer being held.
+    ; unpress = unpress & controls
+    ld a, [joy_unpress]
+    and c
+    ld [joy_unpress], a
+    
+    ; Only keep controls that don't have the unpress flag set.
+    xor $FF
+    and c
+    ld [joy_controls], a
+
+    ; Reset the joypad port.
+    ld a, GB_JOY_VIEW_DPAD | GB_JOY_VIEW_BUTTONS
+    ldh [gb_joypad], a
+
+    ret

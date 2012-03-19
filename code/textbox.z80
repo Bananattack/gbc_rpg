@@ -1,0 +1,444 @@
+textbox_create:
+; Dirty: all registers
+; Arguments:
+;   [t0] = width
+;   [t1] = height
+;   hl = dest
+    ld bc, $0000
+    ld a, [hardware_type] ; Check hardware type.
+    or a, a
+    jr z, .skip ; DMG doesn't have vram banks.
+        ; Switch active GBC bank to tiles.
+        GBC_VRAM_SWITCH_BANK 0
+.skip:
+.loop:
+    ; repeat
+        ld a, 0
+        cp a, b
+        jr nz, .check_middle
+        ; if top,
+            ld a, 0
+            cp a, c
+            jr z, .is_top_left_corner
+            ld a, [t0]
+            cp a, c
+            jr z, .is_top_right_corner
+            ; if in the top-middle,
+                ld a, TILE_BOX_FRAME + 1
+                jr .done_check
+.is_top_left_corner:
+            ; else if in top-left,
+                ld a, TILE_BOX_FRAME
+                jr .done_check
+.is_top_right_corner:
+            ; else
+                ld a, TILE_BOX_FRAME + 2
+                jr .done_check
+            ; end
+.check_middle:
+        ld a, [t1]
+        cp a, b
+        jr z, .is_bottom
+        ; if middle,
+            ld a, 0
+            cp a, c
+            jr z, .is_left_edge
+            ld a, [t0]
+            cp a, c
+            jr z, .is_right_edge
+            ; if in the middle,
+                ld a, TILE_BOX_FRAME + 4
+                jr .done_check
+.is_left_edge:
+            ; else if in the left,
+                ld a, TILE_BOX_FRAME + 3
+                jr .done_check
+.is_right_edge:
+            ; else
+                ld a, TILE_BOX_FRAME + 5
+                jr .done_check
+            ; end
+.is_bottom:
+        ; else
+            ld a, 0
+            cp a, c
+            jr z, .is_bottom_left_corner
+            ld a, [t0]
+            cp a, c
+            jr z, .is_bottom_right_corner
+            ; if in the middle,
+                ld a, TILE_BOX_FRAME + 7
+                jr .done_check
+.is_bottom_left_corner:
+            ; else if in the bottom left,
+                ld a, TILE_BOX_FRAME + 6
+                jr .done_check
+.is_bottom_right_corner:
+            ; else
+                ld a, TILE_BOX_FRAME + 8
+                jr .done_check
+            ; end
+.done_check:
+        ; end
+    
+        ld [hl+], a
+        
+        ; c++
+        inc c
+        ld a, [t0]
+        inc a
+        cp a, c
+        jr nz, .loop
+        ; if c == width,
+            ; a = -width + 32
+            ld a, [t0]
+            cpl
+            add 32
+            ; hl += a
+            add a, l
+            ld l, a
+            ld a, h
+            adc 0
+            ld h, a
+
+            ; c = 0
+            ld c, 0
+            ; b++
+            inc b
+            
+            ld a, [t1]
+            inc a
+            cp a, b
+            jr nz, .loop
+            ; if b == height, break.
+        ; end
+    ; end
+    
+    ret
+
+textbox_fill_attributes:
+; Dirty: all registers
+; Arguments:
+;   [t0] = width
+;   [t1] = height
+;   hl = dest
+;   e = fill color
+    ld bc, $0000
+    GBC_VRAM_SWITCH_BANK 1
+.loop:
+    ; repeat
+        ld a, e
+        ld [hl+], a
+        
+        ; c++
+        inc c
+        ld a, [t0]
+        inc a
+        cp a, c
+        jr nz, .loop
+        ; if c == width,
+            ; a = -width + 32
+            ld a, [t0]
+            cpl
+            add 32
+            ; hl += a
+            add a, l
+            ld l, a
+            ld a, h
+            adc 0
+            ld h, a
+
+            ; c = 0
+            ld c, 0
+            ; b++
+            inc b
+            
+            ld a, [t1]
+            inc a
+            cp a, b
+            jr nz, .loop
+            ; if b == height, break.
+        ; end
+    ; end
+    
+    ret
+
+
+textbox_init:
+    ld a, 5 * 8
+    ld [scan_scanline], a
+    
+    ld hl, gb_vram_map_2
+    ld a, 19
+    ld [t0], a
+    ld a, 5
+    ld [t1], a
+    call textbox_create
+
+    ld hl, gb_vram_map_2 + (TEXTBOX_Y + 2) * 32 + 1
+    ld de, placeholder_text
+    call textbox_copy_string
+
+    ld a, [hardware_type] ; Check hardware type.
+    or a, a
+    ret z ; DMG doesn't have vram banks.
+    ; Switch active GBC bank to attributes.
+    GBC_VRAM_SWITCH_BANK 1
+    
+    ld hl, gb_vram_map_2
+    ld a, $00
+    ld bc, 1024
+    call memset
+    ret
+
+textbox_copy_string:
+; Dirty: all registers
+; Arguments:
+;   de = src
+;   hl = dest
+; Locals:
+;   bc
+    ld bc, 64
+    push hl
+    ; Switch active GBC bank to tiles.
+    GBC_VRAM_SWITCH_BANK 0   
+.loop:
+        ld a, [de]
+        inc de
+        or a, a
+        jr z, .done ; break if [src] == 0
+        cp a, $01
+        jr nz, .skip
+        ; if newline, move to start of the line, one line down
+            pop hl
+            add hl, bc
+            push hl
+            jr .loop
+        ; end
+.skip:
+        ld [hl+], a
+        jr .loop
+.done:
+    pop hl
+    ret
+
+textbox_copy_raw_tile_string:
+; Dirty: all registers
+; Arguments:
+;   de = src
+;   hl = dest
+; Locals:
+;   bc
+    ld bc, 64
+    ; Switch active GBC bank to tiles.
+    GBC_VRAM_SWITCH_BANK 0   
+.loop:
+        ld a, [de]
+        inc de
+        or a, a
+        jr z, .done ; break if [src] == 0
+        ld [hl+], a
+        jr .loop
+.done:
+    ret
+
+; Copies a left-aligned zero-padded 2-digit number.
+textbox_copy_number_2_digit:
+; Dirty: all registers
+; Arguments:
+;   e = a 2-digit bcd number.
+;   hl = dest
+    ; Switch active GBC bank to tiles.
+    GBC_VRAM_SWITCH_BANK 0
+    ld a, e
+    srl a
+    srl a
+    srl a
+    srl a
+    add a, TILE_DIGIT_0
+    ld [hl+], a
+    ld a, e
+    and $0F
+    add a, TILE_DIGIT_0
+    ; Draw digit 0 regardless.
+    ld [hl+], a
+    ret
+    
+; Copies a left-aligned 6-digit number that will be 1 to 6 characters.
+textbox_copy_number:
+; Dirty: all registers
+; Arguments:
+;   c, d, e = a 6-digit bcd number.
+;   hl = dest
+    ; Switch active GBC bank to tiles.
+    GBC_VRAM_SWITCH_BANK 0
+    ld a, c
+    and $F0
+    jr z, .skip_d5
+        srl a
+        srl a
+        srl a
+        srl a
+        add a, TILE_DIGIT_0
+        ld [hl+], a
+.skip_d5:
+    ld a, c
+    and $0F
+    jr z, .skip_d4
+        add a, TILE_DIGIT_0
+        ld [hl+], a        
+.skip_d4:
+    ld a, d
+    and $F0
+    jr z, .skip_d3
+        srl a
+        srl a
+        srl a
+        srl a
+        add a, TILE_DIGIT_0
+        ld [hl+], a
+.skip_d3:
+    ld a, d
+    and $0F
+    jr z, .skip_d2
+        add a, TILE_DIGIT_0
+        ld [hl+], a        
+.skip_d2:
+    ld a, e
+    and $F0
+    jr z, .skip_d1
+        srl a
+        srl a
+        srl a
+        srl a
+        add a, TILE_DIGIT_0
+        ld [hl+], a
+.skip_d1:
+    ld a, e
+    and $0F
+    add a, TILE_DIGIT_0
+    ; Draw digit 0 regardless.
+    ld [hl+], a
+    ret
+    
+; Copies a right-aligned 6-digit number that will be 1 to 6 characters.
+textbox_copy_number_right:
+; Dirty: all registers
+; Arguments:
+;   c, d, e = a 6-digit bcd number.
+;   hl = dest
+    ; Switch active GBC bank to tiles.
+    GBC_VRAM_SWITCH_BANK 0
+    ld a, e
+    and $0F
+    add a, TILE_DIGIT_0
+    ; Draw digit 0 regardless.
+    ld [hl-], a
+    ld a, e
+    and $F0
+    jr z, .skip_d1
+        srl a
+        srl a
+        srl a
+        srl a
+        add a, TILE_DIGIT_0
+        ld [hl-], a
+.skip_d1:
+    ld a, d
+    and $0F
+    jr z, .skip_d2
+        add a, TILE_DIGIT_0
+        ld [hl-], a
+.skip_d2:
+    ld a, d
+    and $F0
+    jr z, .skip_d3
+        srl a
+        srl a
+        srl a
+        srl a
+        add a, TILE_DIGIT_0
+        ld [hl-], a
+.skip_d3:TILE_DIGIT_0
+    ld a, c
+    and $0F
+    jr z, .skip_d4
+        add a, TILE_DIGIT_0
+        ld [hl-], a
+.skip_d4:
+    ld a, c
+    and $F0
+    jr z, .skip_d5
+        srl a
+        srl a
+        srl a
+        srl a
+        add a, TILE_DIGIT_0
+        ld [hl-], a
+.skip_d5:
+    ret
+
+textbox_unroll_string:
+; Dirty: all registers
+; Arguments:
+;   hl = pointer to code buffer.
+;   bc = buffered characters.
+;   de = eventually destination.
+    ; Save start of line.
+    push de
+    ; Switch active GBC bank to tiles.
+    ; buffer << `ld a, n`
+    ld a, $3E
+    ld [hl+], a
+    ld a, 0
+    ld [hl+], a
+    ; buffer << `ld [$FFnn], a`
+    ld a, $E0
+    ld [hl+], a
+    ld a, gbc_vram_bank & $FF
+    ld [hl+], a
+.loop:
+        ; First, check the character to be copied.
+        ld a, [bc]
+        or a, a
+        jr z, .done ; break if [src] == 0
+        cp a, $01
+        jr nz, .skip
+        ; if newline, move to start of the line, one line down
+            ; src++
+            inc bc
+            ; dest += 64
+            pop de
+            ld a, e
+            add a, 64
+            ld e, a
+            ld a, d
+            adc a, 0
+            ld d, a
+            push de
+            jr .loop
+        ; end
+.skip:
+        ; Character copy.
+        ; buffer << `ld a, n`
+        ld a, $3E
+        ld [hl+], a
+        ld a, [bc]
+        ld [hl+], a
+        ; buffer << `ld [nn], a`
+        ld a, $EA
+        ld [hl+], a
+        ld a, e
+        ld [hl+], a
+        ld a, d
+        ld [hl+], a
+
+        ; src++
+        inc bc
+        ; dest++
+        inc de
+        jr .loop
+.done:
+    ; Pop off saved line position to restore stack.
+    pop de
+    ret

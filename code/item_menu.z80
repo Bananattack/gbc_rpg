@@ -1,0 +1,131 @@
+item_menu_start:
+    ; Setup some events.
+    ld bc, item_menu_step
+    ld hl, item_menu_scan_main
+    ld de, item_menu_draw
+    
+    ; Not yet loaded.
+    ld a, 0
+    ld [menu_loaded], a    
+    
+    ld a, c
+    ld [step_event_lo], a
+    ld a, b
+    ld [step_event_hi], a
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+    ld a, e
+    ld [draw_event_lo], a
+    ld a, d
+    ld [draw_event_hi], a
+    
+    jp item_menu_step ; tail call
+    
+item_menu_step:
+    ; Cancelled?
+    ld a, [menu_mode]
+    cp MENU_MODE_MAIN
+    jp z, menu_start ; tail call
+
+    ; Check if the menu is loaded...
+    ld a, [menu_loaded]
+    or a, a
+    jp nz, .skip
+    ; if not, load it!
+        di
+        GB_DISPLAY_DISABLE
+
+        ld hl, gb_vram_map_2 
+        ld a, 19
+        ld [t0], a
+        ld a, 4
+        ld [t1], a
+        call textbox_create
+        
+        ld hl, gb_vram_map_2 + 32 * 5
+        ld a, 19
+        ld [t0], a
+        ld a, 12
+        ld [t1], a
+        call textbox_create
+        
+        ; Clear sprites.
+        ld hl, sprite_buffer
+        ld a, 0
+        ld bc, SPRITE_BUFFER_SIZE
+        call memset
+        ; Copy now.
+        ld h, sprite_buffer >> 8
+        call gfx_sprite_copy
+        ; Clear tile buffer.
+        call map_begin_tile_buffer
+        call map_end_tile_buffer
+        
+        ld a, GB_LCD_ON | GB_LCD_BG_MAP_2 | GB_LCD_TILES_2 | GB_LCD_SPR_ON | GB_LCD_BG_ON
+        ldh [gb_lcd_ctrl], a
+        
+        ld a, 1
+        ld [menu_loaded], a
+        
+        ei
+.skip:
+    ret
+    
+item_menu_scan_main:
+    ; Apply gradient.
+    call menu_scan_gradient
+
+    ; Only apply the gradient on subsequent scanline interrupts.
+    ld hl, menu_scan_gradient
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+
+    ; Check for input.
+    call joy_check
+    
+.check_b:
+    ; if cancel button,
+    ld a, [joy_controls]
+    bit JOY_BIT_B, a
+    jr z, .done_cancel_check
+        ld a, [joy_unpress]
+        set JOY_BIT_B, a
+        ld [joy_unpress], a
+
+        ld a, MENU_MODE_MAIN
+        ld [menu_mode], a
+    ; end
+.done_cancel_check:
+
+    ret
+    
+item_menu_draw:
+    ld hl, gradient_colors
+    ; Copy color entry.
+    ld a, $82
+    ldh [gbc_bg_pal_addr], a
+    ld a, [hl+]
+    ldh [gbc_bg_pal_data], a
+    ld a, [hl-]
+    ldh [gbc_bg_pal_data], a
+
+    ; Reset gradient index.
+    ld a, 2
+    ld [gradient_index], a
+
+    ; Prepare next stat interrupt.
+    ld a, 7
+    ld [scan_scanline], a
+
+    ; Hook main scanline event.
+    ld hl, item_menu_scan_main
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+
+    jp handle_redraw ; tail call

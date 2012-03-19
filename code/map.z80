@@ -1,0 +1,853 @@
+; Updates the tile position of the camera.
+map_update_camera_tile_coord:
+; Dirty: af, hl
+    ; hl = camera_x
+    ld a, [camera_x_lo]
+    ld l, a
+    ld a, [camera_x_hi]
+    ld h, a
+    
+    ; hl /= 16;
+    srl h
+    rr l
+    srl h
+    rr l
+    srl h
+    rr l
+    srl h
+    rr l
+    
+    ; camera_tile_x = camera_x / 16
+    ld a, l
+    ld [camera_tile_x_lo], a
+    ld a, h
+    ld [camera_tile_x_hi], a
+
+    ; hl = camera_y
+    ld a, [camera_y_lo]
+    ld l, a
+    ld a, [camera_y_hi]
+    ld h, a
+    
+    ; hl /= 16;
+    srl h
+    rr l
+    srl h
+    rr l
+    srl h
+    rr l
+    srl h
+    rr l
+    
+    ; camera_tile_y = camera_y / 16
+    ld a, l
+    ld [camera_tile_y_lo], a
+    ld a, h
+    ld [camera_tile_y_hi], a
+    ret
+
+map_calculate_pointer_offset:
+; Dirty: all registers
+; Arguments:
+;   bc = tile x
+;   de = tile y
+;   hl = address of map
+; Return:
+;   hl = address of specific tile on map.
+    ; Multiply de by 2^(map_width_shift), because this is a row-major map.
+    ld a, [map_width_shift]
+.loop:
+    ; do
+        ; de *= 2; a--;
+        sla e
+        rl d
+        dec a
+        jr nz, .loop
+    ; while a != 0    
+    
+    ; hl += (de << map_width_shift) + bc
+    add hl, de
+    add hl, bc
+    ret
+    
+
+map_begin_tile_buffer:
+    ; Initialize the code write pointer.
+    ld hl, map_buf_data
+    ld a, l
+    ld [map_buf_ptr_lo], a
+    ld a, h
+    ld [map_buf_ptr_hi], a
+    ret
+
+map_end_tile_buffer:
+    ld hl, map_buf_ptr_lo
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a ; hl = code buffer    
+    
+    ; buffer << `ret`
+    ld a, $C9
+    ld [hl+], a
+    
+    ; Now save the code pointer in case we need to do more crap here.
+    ld a, l
+    ld [map_buf_ptr_lo], a
+    ld a, h
+    ld [map_buf_ptr_hi], a
+    
+    ret
+
+map_prepare_scroll:
+    ; Check the buffer lock.
+    ld a, [tmp_buf_lock]
+    ; Do we have on-going column work? Finish it.
+    cp TMP_BUF_LOCK_HSCROLL
+    jp z, _map_unroll_column ; tail call to Part 2 (Columns)
+    ; Do we have on-going row work? Finish it.
+    cp TMP_BUF_LOCK_VSCROLL
+    jp z, _map_unroll_row ; tail call to Part 2 (Rows)
+
+    ; Are we working on something?
+    ld a, [camera_motion_working]
+    or a, a
+    jr nz, .skip_new_work_check
+    ; if we aren't,
+        ; Check if there should be a request to work on.
+        ld a, [camera_motion_request]
+        ld [camera_motion_working], a
+        ; Clear the request.
+        xor a, a
+        ld [camera_motion_request], a
+        ; Update the camera position for this scroll buffering.
+        call map_update_camera_tile_coord
+    ; end
+.skip_new_work_check:
+
+    ; If we need to scroll vertically, do it first.
+    ld a, [camera_motion_working]
+    and a, CAMERA_MOTION_UP | CAMERA_MOTION_DOWN
+    jp nz, _map_prepare_vertical_scroll
+
+    ; Otherwise, check if we need to scroll horizontally.
+    ld a, [camera_motion_working]
+    and a, CAMERA_MOTION_LEFT | CAMERA_MOTION_RIGHT
+    ret z ; Nothing to do? Stop.
+    
+    ; Part 1: Unpack metatiles into temporary buffer.
+    ; Lock, and unpack the map metatiles into temporary RAM.
+    ; (It will be unlocked next frame)
+    ld a, TMP_BUF_LOCK_HSCROLL
+    ld [tmp_buf_lock], a
+        
+    ld a, 1
+    ld [t0], a
+    ld a, GB_VRAM_MAP_HEIGHT
+    ld [t1], a
+
+    ; Let (x, y) = (bc, de) be the offset for new tiles
+    ld a, [camera_motion_working]
+    bit CAMERA_MOTION_BIT_LEFT, a
+    jr z, .else
+    ; if we're moving left, buffer left.
+        ld bc, -1
+        jr .end
+.else:
+    ; else, buffer right.
+        ld bc, GB_SCREEN_WIDTH / 16 + 1
+.end:
+    ; end
+    ld de, 0
+
+    ; bc += camera_x
+    ld a, [camera_tile_x_lo]
+    add a, c
+    ld c, a
+    ld a, [camera_tile_x_hi]
+    adc a, b
+    ld b, a
+
+    ; de += camera_y
+    ld a, [camera_tile_y_lo]
+    add a, e
+    ld e, a
+    ld a, [camera_tile_y_hi]
+    adc a, d
+    ld d, a
+    
+    ; hl = map offset.
+    ld hl, world1_map
+    
+    ; hl = map offset + de * width + bc
+    call map_calculate_pointer_offset
+    
+    ld bc, metatiles
+    ld de, tmp_buf_tile
+    
+    ; Call the buffering routine, now that our arguments are prepared.
+    jp gfx_buffer_map ; tail call
+
+_map_prepare_vertical_scroll:
+    ; Part 1: Unpack metatiles into temporary buffer.
+    ; Lock, and unpack the map metatiles into temporary RAM.
+    ; (It will be unlocked next frame)
+    ld a, TMP_BUF_LOCK_VSCROLL
+    ld [tmp_buf_lock], a
+        
+    ld a, GB_VRAM_MAP_WIDTH / 2
+    ld [t0], a
+    ld a, 2
+    ld [t1], a
+
+    ; Let (x, y) = (bc, de) be the offset for new tiles
+    ld a, [camera_motion_working]
+    ld bc, 0
+    bit CAMERA_MOTION_BIT_UP, a
+    jr z, .else
+    ; if we're moving up, buffer up.
+        ld de, -1
+        jr .end
+.else:
+    ; else, buffer down.
+        ld de, GB_SCREEN_HEIGHT / 16 + 1
+.end:
+    ; end
+
+    ; bc += camera_x
+    ld a, [camera_tile_x_lo]
+    add a, c
+    ld c, a
+    ld a, [camera_tile_x_hi]
+    adc a, b
+    ld b, a
+
+    ; de += camera_y
+    ld a, [camera_tile_y_lo]
+    add a, e
+    ld e, a
+    ld a, [camera_tile_y_hi]
+    adc a, d
+    ld d, a
+    
+    ; hl = map offset.
+    ld hl, world1_map
+    
+    ; hl = map offset + de * width + bc
+    call map_calculate_pointer_offset
+    
+    ld bc, metatiles
+    ld de, tmp_buf_tile
+    
+    ; Call the buffering routine, now that our arguments are prepared.
+    jp gfx_buffer_map ; tail call
+
+_map_unroll_column:
+    ; Unlock the tmp buffer for next frame.
+    xor a, a
+    ld [tmp_buf_lock], a
+
+    ; Part 2: Call unrolling routine.
+    ld hl, map_buf_ptr_lo
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a ; hl = code buffer
+    
+    ; Switch active bank to tiles.
+    ; buffer << `ld a, n`
+    ld a, $3E
+    ld [hl+], a
+    ld a, 0
+    ld [hl+], a
+    ; buffer << `ld [$FFnn], a`
+    ld a, $E0
+    ld [hl+], a
+    ld a, gbc_vram_bank & $FF
+    ld [hl+], a
+        
+    ld bc, tmp_buf_tile ; bc = source
+    ld de, gb_vram_map_1
+    
+    ; a = camera_position
+    ld a, [camera_tile_x_lo]
+    ld e, a
+    ld a, 0
+    ld d, a
+    ; e *= 2
+    sla e
+    ld a, [camera_motion_working]
+    bit CAMERA_MOTION_BIT_LEFT, a
+    jr z, .else
+    ; if we're moving left, buffer left.
+        ld a, e
+        add a, -2
+        jr .end
+.else:
+    ; else, buffer right.
+        ld a, e
+        add a, GB_SCREEN_WIDTH / 8 + 2
+.end:
+    ; end
+    ; de = ((e + border) % 32) + gb_vram_map_1
+    and a, $1F
+    add a, gb_vram_map_1 & $FF
+    ld e, a
+    ld a, d
+    adc a, gb_vram_map_1 >> 8
+    ld d, a ; de = dest
+    
+    ; t0 = (camera_tile_y_lo - SCROLL_BORDER_Y - 1) * 2
+    ld a, [camera_tile_y_lo]
+    ;sub a, SCROLL_BORDER_Y - 1
+    sla a
+    ld [t0], a
+    
+    call gfx_unroll_column
+
+    ; Should we update attributes?
+    ld a, [hardware_type] ; Check hardware type.
+    or a, a
+    jr z, _map_done_unroll_column ; DMG doesn't vram banks.
+_map_unroll_column_attr:
+    ; Switch active GBC bank to attributes.
+    ; buffer << `ld a, n`
+    ld a, $3E
+    ld [hl+], a
+    ld a, 1
+    ld [hl+], a
+    ; buffer << `ld [$FFnn], a`
+    ld a, $E0
+    ld [hl+], a
+    ld a, gbc_vram_bank & $FF
+    ld [hl+], a
+
+    ld bc, tmp_buf_attr ; bc = source
+    
+    ; a = camera_position
+    ld a, [camera_tile_x_lo]
+    ld e, a
+    ld a, 0
+    ld d, a
+    ; e *= 2
+    sla e
+    ld a, [camera_motion_working]
+    bit CAMERA_MOTION_BIT_LEFT, a
+    jr z, .else
+    ; if we're moving left, buffer left.
+        ld a, e
+        add a, -2
+        jr .end
+.else:
+    ; else, buffer right.
+        ld a, e
+        add a, GB_SCREEN_WIDTH / 8 + 2
+.end:
+    ; end
+    ; de = ((e + border) % 32) + gb_vram_map_1
+    and a, $1F
+    add a, gb_vram_map_1 & $FF
+    ld e, a
+    ld a, d
+    adc a, gb_vram_map_1 >> 8
+    ld d, a ; de = dest
+    
+    ; t0 = (camera_tile_y_lo - SCROLL_BORDER_Y - 1) * 2
+    ld a, [camera_tile_y_lo]
+    ;sub a, SCROLL_BORDER_Y - 1
+    sla a
+    ld [t0], a
+    
+    call gfx_unroll_column
+_map_done_unroll_column:
+    ; Now save the code pointer in case we need to do more crap here.
+    ld a, l
+    ld [map_buf_ptr_lo], a
+    ld a, h
+    ld [map_buf_ptr_hi], a
+    
+    ; Acknowledge camera motion buffering work as completed!
+    ; Preserve non-horizontal movement in a temporary.
+    ld a, [camera_motion_current]
+    and a, ~(CAMERA_MOTION_LEFT | CAMERA_MOTION_RIGHT)
+    ld b, a
+    ; bitwise-or the worked-on horizontal motion with temporary.
+    ld a, [camera_motion_working]
+    and a, (CAMERA_MOTION_LEFT | CAMERA_MOTION_RIGHT)
+    or a, b
+    ; Update current motion.
+    ld [camera_motion_current], a
+    
+    ; Clear horizontal work.
+    ld a, [camera_motion_working]
+    and a, ~(CAMERA_MOTION_LEFT | CAMERA_MOTION_RIGHT)
+    ld [camera_motion_working], a
+    
+    ret
+
+_map_unroll_row:
+    ; Unlock the tmp buffer for next frame.
+    xor a, a
+    ld [tmp_buf_lock], a
+
+    ; Part 2: Call unrolling routine.
+    ld hl, map_buf_ptr_lo
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a ; hl = code buffer
+    
+    ; Switch active bank to tiles.
+    ; buffer << `ld a, n`
+    ld a, $3E
+    ld [hl+], a
+    ld a, 0
+    ld [hl+], a
+    ; buffer << `ld [$FFnn], a`
+    ld a, $E0
+    ld [hl+], a
+    ld a, gbc_vram_bank & $FF
+    ld [hl+], a
+        
+    ld bc, tmp_buf_tile ; bc = source
+    ld de, gb_vram_map_1
+    
+    ; a = camera_position
+    ld a, [camera_tile_y_lo]
+    ld e, a
+    ld a, 0
+    ld d, a
+    ; e *= 2
+    sla e
+    
+    ld a, [camera_motion_working]
+    bit CAMERA_MOTION_BIT_UP, a
+    jr z, .else
+    ; if we're moving up, buffer up.
+        ld a, e
+        add a, -2
+        jr .end
+.else:
+    ; else, buffer down
+        ld a, e
+        add a, GB_SCREEN_HEIGHT / 8 + 2
+.end:
+    ; end
+    ; de = ((e + border) % 32)
+    and a, $1F
+    ld e, a
+    
+    ; de *= 32
+    sla e
+    rl d
+    sla e
+    rl d
+    sla e
+    rl d
+    sla e
+    rl d
+    sla e
+    rl d
+    
+    ; de += gb_vram_map_1
+    ld a, e
+    add a, gb_vram_map_1 & $FF
+    ld e, a
+    ld a, d
+    adc a, gb_vram_map_1 >> 8
+    ld d, a ; de = dest
+    
+    ; t0 = (camera_tile_x_lo - SCROLL_BORDER_X - 1) * 2
+    ld a, [camera_tile_x_lo]
+    sla a
+    ld [t0], a
+    
+    call gfx_unroll_row
+
+    ; Should we update attributes?
+    ld a, [hardware_type] ; Check hardware type.
+    or a, a
+    jr z, _map_done_unroll_row ; DMG doesn't vram banks.
+_map_unroll_row_attr:
+    ; Switch active GBC bank to tiles.
+    ; buffer << `ld a, n`
+    ld a, $3E
+    ld [hl+], a
+    ld a, 1
+    ld [hl+], a
+    ; buffer << `ld [$FFnn], a`
+    ld a, $E0
+    ld [hl+], a
+    ld a, gbc_vram_bank & $FF
+    ld [hl+], a
+
+    ld bc, tmp_buf_attr ; bc = source
+    
+    ; a = camera_position
+    ld a, [camera_tile_y_lo]
+    ld e, a
+    ld a, 0
+    ld d, a
+    ; e *= 2
+    sla e
+    ld a, [camera_motion_working]
+    bit CAMERA_MOTION_BIT_UP, a
+    jr z, .else
+    ; if we're moving up, buffer up.
+        ld a, e
+        add a, -2
+        jr .end
+.else:
+    ; else, buffer down
+        ld a, e
+        add a, GB_SCREEN_HEIGHT / 8 + 2
+.end:
+    ; end
+    ; de = ((e + border) % 32)
+    and a, $1F
+    ld e, a
+    
+    ; de *= 32
+    sla e
+    rl d
+    sla e
+    rl d
+    sla e
+    rl d
+    sla e
+    rl d
+    sla e
+    rl d
+    
+    ; de += gb_vram_map_1
+    ld a, e
+    add a, gb_vram_map_1 & $FF
+    ld e, a
+    ld a, d
+    adc a, gb_vram_map_1 >> 8
+    ld d, a ; de = dest
+    
+    ; t0 = (camera_tile_x_lo - SCROLL_BORDER_X - 1) * 2
+    ld a, [camera_tile_x_lo]
+    sla a
+    ld [t0], a
+    
+    call gfx_unroll_row
+_map_done_unroll_row:
+    ; Now save the code pointer in case we need to do more crap here.
+    ld a, l
+    ld [map_buf_ptr_lo], a
+    ld a, h
+    ld [map_buf_ptr_hi], a
+    
+    ; Acknowledge camera motion buffering work as completed!
+    ; Preserve non-vertical movement in a temporary.
+    ; b = 00LR
+    ld a, [camera_motion_current]
+    and a, ~(CAMERA_MOTION_UP | CAMERA_MOTION_DOWN)
+    ld b, a
+    ; bitwise-or the worked-on vertical motion with temporary.
+    ld a, [camera_motion_working]
+    and a, (CAMERA_MOTION_UP | CAMERA_MOTION_DOWN)
+    or a, b
+    ; Update current motion.
+    ld [camera_motion_current], a
+
+    ; Clear vertical work.
+    ld a, [camera_motion_working]
+    and a, ~(CAMERA_MOTION_UP | CAMERA_MOTION_DOWN)
+    ld [camera_motion_working], a
+    
+    ret
+    
+map_start:
+    ; Setup some events.
+    ld bc, map_step
+    ld hl, $0000
+    ld de, map_draw
+    
+    ld a, c
+    ld [step_event_lo], a
+    ld a, b
+    ld [step_event_hi], a
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+    ld a, e
+    ld [draw_event_lo], a
+    ld a, d
+    ld [draw_event_hi], a
+
+    jp map_step ; tail call
+    
+map_step:
+    ld a, [menu_mode]
+    cp MENU_MODE_OFF
+    jp nz, menu_start ; tail call
+
+    call map_begin_tile_buffer
+    ; begin
+        call map_prepare_scroll
+    ; end
+    call map_end_tile_buffer
+    ret
+   
+map_scan_gradient:
+    call wait_for_hblank
+
+    ld a, [scan_scanline]
+    cp 6 * 8 - 1
+    jr nz, .done ;
+    ; if y == 5 * 8
+        ld a, 255
+        ldh [gb_win_x], a
+        ldh [gb_win_y], a
+        ld [scan_scanline], a
+        ld hl, textbox_colors
+        ;jr .done
+.done:
+
+    ; Calculate gradient color.
+    ld hl, gradient_colors
+    ld a, [gradient_index]
+    ld c, a
+    ld b, 0
+    add hl, bc
+
+    ; Copy color entry.
+    ld a, $82
+    ldh [gbc_bg_pal_addr], a
+    ld a, [hl+]
+    ldh [gbc_bg_pal_data], a
+    ld a, [hl-]
+    ldh [gbc_bg_pal_data], a
+
+    ld a, $1B
+    ldh [dmg_bg_pal], a
+
+    ; Prepare next stat interrupt.
+    ld a, [scan_scanline]
+    add a, 8
+    ld [scan_scanline], a
+    ldh [gb_line_y_cmp], a
+
+    ; Advance gradient index.
+    ld a, [gradient_index]
+    inc a
+    inc a
+    ld [gradient_index], a
+
+    ret
+    
+map_scan_main:
+    ; Apply gradient.
+    call map_scan_gradient
+
+    ; Only apply the gradient on subsequent scanline interrupts.
+    ld hl, map_scan_gradient
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+
+    ; Check for input.
+    call joy_check
+    
+.check_a:
+    ld a, [joy_controls]
+    and a, JOY_A | JOY_B
+    jr z, .check_start
+        ld a, [textbox_mode]
+        xor a, 1
+        ld [textbox_mode], a
+        
+        ld a, [joy_unpress]
+        or a, JOY_A | JOY_B
+        ld [joy_unpress], a
+.check_start:
+    ld a, [joy_controls]
+    bit JOY_BIT_START, a
+    jr z, .done_button_check
+        ld a, [joy_unpress]
+        set JOY_BIT_START, a
+        ld [joy_unpress], a
+
+        ld a, MENU_MODE_MAIN
+        ld [menu_mode], a
+.done_button_check:
+
+.check_down:
+    ld a, [joy_controls]
+    bit JOY_BIT_DOWN, a
+    jr z, .check_up
+    ; if down pressed, then move down
+        ; Ask to buffer down motion.
+        ld a, [camera_motion_request]
+        set CAMERA_MOTION_BIT_DOWN, a
+        ld [camera_motion_request], a
+        ; If the buffering hasn't started, we need to wait until the loader is ready.
+        ld a, [camera_motion_current]
+        bit CAMERA_MOTION_BIT_DOWN, a
+        jr z, .end_vertical_direction_check
+    
+        ; Increase camera position
+        ld a, [camera_y_lo]
+        add SCROLL_SPEED
+        ld [camera_y_lo], a
+        ld a, [camera_y_hi]
+        adc 0
+        ld [camera_y_hi], a
+        jr .end_vertical_direction_check
+.check_up:
+    bit JOY_BIT_UP, a
+    jr z, .not_moving_vertical
+    ; else if up pressed, then move up
+        ; Check if camera is at an edge.
+        ld a, [camera_y_hi]
+        or a, a
+        jr nz, .camera_can_scroll_up
+            ld a, [camera_y_lo]
+            or a, a
+            jr z, .not_moving_vertical
+.camera_can_scroll_up:
+    
+        ; Ask to buffer up motion.
+        ld a, [camera_motion_request]
+        set CAMERA_MOTION_BIT_UP, a
+        ld [camera_motion_request], a
+        ; If the buffering hasn't started, we need to wait until the loader is ready.
+        ld a, [camera_motion_current]
+        bit CAMERA_MOTION_BIT_UP, a
+        jr z, .end_vertical_direction_check
+    
+        ; Decrease camera position
+        ld a, [camera_y_lo]
+        sub SCROLL_SPEED
+        ld [camera_y_lo], a
+        ld a, [camera_y_hi]
+        sbc 0
+        ld [camera_y_hi], a
+        jr .end_vertical_direction_check
+    ; end
+.not_moving_vertical:
+    ld a, [camera_motion_request]
+    and a, ~(CAMERA_MOTION_UP | CAMERA_MOTION_DOWN)
+    ld [camera_motion_request], a
+.end_vertical_direction_check:
+
+.check_right:
+    ld a, [joy_controls]
+    bit JOY_BIT_RIGHT, a
+    jr z, .check_left
+    ; if right pressed, then move right
+        ; Ask to buffer right motion.
+        ld a, [camera_motion_request]
+        set CAMERA_MOTION_BIT_RIGHT, a
+        ld [camera_motion_request], a
+        ; If the buffering hasn't started, we need to wait until the loader is ready.
+        ld a, [camera_motion_current]
+        bit CAMERA_MOTION_BIT_RIGHT, a
+        jr z, .end_horizontal_direction_check
+    
+        ; Increase camera position
+        ld a, [camera_x_lo]
+        add SCROLL_SPEED
+        ld [camera_x_lo], a
+        ld a, [camera_x_hi]
+        adc 0
+        ld [camera_x_hi], a
+        jr .end_horizontal_direction_check
+.check_left:
+    bit JOY_BIT_LEFT, a
+    jr z, .not_moving_horizontal
+    ; else if left pressed, then move left
+        ; Check if camera is at an edge.
+        ld a, [camera_x_hi]
+        or a, a
+        jr nz, .camera_can_scroll_left
+            ld a, [camera_x_lo]
+            or a, a
+            jr z, .not_moving_horizontal
+.camera_can_scroll_left:
+    
+        ; Ask to buffer left motion.
+        ld a, [camera_motion_request]
+        set CAMERA_MOTION_BIT_LEFT, a
+        ld [camera_motion_request], a
+        ; If the buffering hasn't started, we need to wait until the loader is ready.
+        ld a, [camera_motion_current]
+        bit CAMERA_MOTION_BIT_LEFT, a
+        jr z, .end_horizontal_direction_check
+    
+        ; Decrease camera position
+        ld a, [camera_x_lo]
+        sub SCROLL_SPEED
+        ld [camera_x_lo], a
+        ld a, [camera_x_hi]
+        sbc 0
+        ld [camera_x_hi], a
+        jr .end_horizontal_direction_check
+    ; end
+.not_moving_horizontal:
+    ld a, [camera_motion_request]
+    and a, ~(CAMERA_MOTION_LEFT | CAMERA_MOTION_RIGHT)
+    ld [camera_motion_request], a
+.end_horizontal_direction_check:
+    ret
+
+
+map_draw:
+    ; if textbox on, show the window.
+    ld a, [textbox_mode]
+    or a, a
+    jr z, .else_textbox_off
+        ld a, [hardware_type] ; Check hardware type.
+        or a, a
+        jr nz, .skip_cgb ; CGB has a better palette system. Don't bother with this!
+            ; Switch active GBC bank to tiles.
+            ld a, $1B
+            ld [dmg_bg_pal], a
+.skip_cgb:
+
+        ld a, 7
+        ldh [gb_win_x], a
+        ld a, 0
+        ldh [gb_win_y], a
+        jr .done_textbox_check
+.else_textbox_off:
+    ; else, hide the window offscreen.
+        ld a, 255
+        ldh [gb_win_x], a
+        ldh [gb_win_y], a
+    ; end
+.done_textbox_check:
+    ld hl, gradient_colors
+    ; Copy color entry.
+    ld a, $82
+    ldh [gbc_bg_pal_addr], a
+    ld a, [hl+]
+    ldh [gbc_bg_pal_data], a
+    ld a, [hl-]
+    ldh [gbc_bg_pal_data], a
+
+    ; Reset gradient index.
+    ld a, 2
+    ld [gradient_index], a
+
+    ld a, [camera_x_lo]
+    ldh [gb_scroll_x], a
+    ld a, [camera_y_lo]
+    ldh [gb_scroll_y], a
+    
+    ; Reset to top scanline hook.
+    ld hl, map_scan_main
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+
+    ; Prepare next stat interrupt.
+    ld a, 7
+    ld [scan_scanline], a
+    
+    jp handle_redraw ; tail call
+    
+    

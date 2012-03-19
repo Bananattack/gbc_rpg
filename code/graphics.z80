@@ -1,0 +1,572 @@
+GFX_LOADLIB: MACRO
+    call gfx_load_sprite_copy
+ENDM
+
+; --
+; Braindumping: (remove later?)    
+; Map position in (0 .. width - 1) * (0 .. height - 1)
+;
+; columns: d = (camera.x / 8) + GB_VRAM_MAP_WIDTH; x = (d + 5 & 0x1F, d + 6 & 0x1F); y = 0 .. 31
+; rows: d = (camera.y / 8) + GB_VRAM_MAP_HEIGHT; x = 0 .. 31; y = (d + 6 & 0x1F, d + 7 & 0x1F)
+; --
+
+GFX_PAL_BG      EQU 1
+GFX_PAL_OAM     EQU 2
+
+; Loads a default greyscale palette for original Gameboy.
+gfx_load_pal_greyscale:
+; Dirty: a
+; Arguments: none
+    ; 0001 1011 = default black -> white ramp.
+    ld a, $1B
+    ld [dmg_bg_pal], a
+    
+    ; 0001 1111 = light sprite ramp (includes white)
+    ld a, $1F
+    ld [dmg_oam_pal], a
+    
+    ; 0010 1111 = dark sprite ramp (no white)
+    ld a, $2F
+    ld [dmg_oam_pal2], a
+    ret
+
+; Loads a color palette for Gameboy Color graphics.
+gfx_load_pal_color:
+; Dirty: all registers
+; Arguments:
+;   b = beginning index
+;   c = count
+;   d = destination (see GFX_PAL_* constants)
+;   hl = address of source data
+    ld a, d
+    cp GFX_PAL_BG
+ 
+    jr nz, .else
+    ; if d == GFX_PAL_BG
+        ld de, gbc_bg_pal_addr
+        jr .done
+.else:
+    ; else
+        ld de, gbc_oam_pal_addr
+.done:
+    ; end
+    
+    ld a, $80
+    add a, b
+    ld [de], a
+    inc de
+.loop:
+    ; repeat
+        ld a, [hl+]
+        ld [de], a
+        ld a, [hl+]
+        ld [de], a
+        dec c
+        jr nz, .loop
+    ; until c == 0
+    ret
+    
+; Load tileset artwork into the video RAM.
+gfx_load_tiles:
+; Dirty: all registers
+; Arguments:
+;   bc = tile count
+;   de = destination (gb_vram_tiles, but possibly offset)
+;   hl = address of source tileset
+; Assumes: GBC_VRAM_BANK has already been switched to desired destination bank.
+    ; bc *= 16
+    sla c
+    rl b
+    sla c
+    rl b
+    sla c
+    rl b
+    sla c
+    rl b
+    call memcpy
+    ret
+    
+; Internal subroutine to unpack metatiles from a map and into a destination buffer.
+_gfx_load_map_data:
+; Dirty: all registers, [t2], [t3]
+; Arguments:
+;   bc = address of metatile data
+;   de = destination
+;   hl = address of source map
+;   [t0] = dest width
+;   [t1] = dest height
+    push hl ; +1 (map)
+    
+    ld a, 0
+    ld [t2], a ; row = 0.
+    ld [t3], a ; col = 0.
+.loop:
+    ; repeat    
+        ; index = [map++]
+        pop hl ; hl = map; +0 ()
+        ld a, [hl+]
+        push hl ; +1 (map)
+        ld h, 0
+        ld l, a
+        ; index *= 8
+        sla l
+        rl h
+        sla l
+        rl h
+        sla l
+        rl h
+        
+        ; Left tile.
+        ; ptr = index + meta
+        add hl, bc
+        ; a = [ptr++]
+        ld a, [hl+]
+        ; [dest++] = a
+        ld [de], a
+        inc de
+        
+        ; Right tile.
+        ; a = [ptr++]
+        ld a, [hl+]
+        ; [dest++] = a
+        ld [de], a
+        inc de
+        
+        ; column++, check if equal to width
+        ld a, [t2]
+        inc a
+        ld [t2], a
+        ld hl, t0
+        cp a, [hl]
+        
+        jr nz, .loop
+        ; if column == GB_VRAM_MAP_WIDTH
+            ; column = 0
+            ld a, 0
+            ld [t2], a
+            
+            ; Alternate rows after checking the row counter.
+            ld a, [t3]
+            bit 0, a
+            jr nz, .else
+            ; if row & 1 == 0
+                ; map -= 16; redo this metatile row to do the lower tiles of each metatile.
+                pop hl ; hl = map; +0 ()
+                
+                ; Subtract by adding two's complement.
+                ld a, [t0]
+                cpl
+                add a, 1
+                add a, l
+                ld l, a
+                ld a, h
+                adc a, $FF
+                ld h, a
+                push hl ; +1 (-buffer_width + map)
+
+                ; meta += 2; point to lower tiles.
+                inc bc
+                inc bc
+                jr .done
+.else:
+            ; else
+                ; map += map_width - buffer_width; On to the next row!
+                pop hl ; hl = map; +0 ()
+                ld a, [map_width_lo]
+                add a, l
+                ld l, a
+                ld a, [map_width_hi]
+                adc a, h
+                ld h, a
+                
+                ld a, [t0]
+                cpl
+                add a, 1
+                add a, l
+                ld l, a
+                ld a, h
+                adc a, $FF
+                ld h, a
+                push hl ; +1 (map_width + -buffer_width + map)
+            
+                ; meta -= 2; point to upper tiles
+                dec bc
+                dec bc               
+.done:
+            ; end
+
+            ; row++, check if equal to height
+            ld a, [t3]
+            inc a
+            ld [t3], a
+            ld hl, t1
+            cp a, [hl]
+            
+            jr nz, .loop
+            ; if row == height
+                pop hl ; hl = map; +0 ()
+                ret
+            ; end
+        ; end
+    ; end
+    
+; Fill destination tilemap in video RAM with an entire 32x32 chunk of map.
+gfx_load_map:
+; Dirty: all registers, [t2], [t3]
+; Arguments:
+;   bc = address of metatile data
+;   de = destination (gb_vram_bg_0 or gb_vram_bg_1)
+;   hl = address of source map
+;   [t0] = dest width
+;   [t1] = dest height
+    ld a, [hardware_type] ; Check hardware type.
+    or a, a
+    jr z, .skip ; DMG doesn't vram banks.
+        ; Switch active GBC bank to tiles.
+        GBC_VRAM_SWITCH_BANK 0
+.skip:
+
+    ; Save place.
+    push bc ; +1 (meta)
+    push de ; +2 (meta, dest)
+    push hl ; +3 (meta, dest, map)
+    
+    ; Copy tiles.
+    call _gfx_load_map_data
+    
+    ; Restore place.
+    pop hl ; hl = map; +2 (meta, dest)
+    pop de ; de = dest; +1 (meta)
+    pop bc ; bc = meta; +0 ()
+    
+    ld a, [hardware_type] ; Check hardware type.
+    or a, a
+    ret z ; DMG doesn't have vram banks or attributes, we're done.
+    
+    ; Color only!
+    ; bc += 4; Move to attribute view of tileset.
+    ld a, c
+    add 4
+    ld c, a
+    ld a, b
+    adc 0
+    ld b, a
+    
+    ; Switch active GBC bank to attributes.
+    GBC_VRAM_SWITCH_BANK 1
+    
+    ; Copy tiles.
+    call _gfx_load_map_data
+    ret
+
+; Grab a subsection of map and unpack its metatile data into a destination buffer in non-video RAM.
+gfx_buffer_map:
+; Dirty: all registers, [t2], [t3]
+; Arguments:
+;   bc = address of metatile data
+;   de = destination buffer
+;   hl = address of source map
+;   [t0] = dest width
+;   [t1] = dest height
+; Note:
+;   de requires width * height * 4 bytes of storage (16x16 tiles + 16x16 attributes).
+    ; Save place.
+    push bc ; +1 (meta)
+    push hl ; +2 (meta, map)
+    
+    ; Copy tiles.
+    call _gfx_load_map_data
+    
+    ; Restore place. (Destination stays where it left off from the last copy)
+    pop hl ; hl = map; +1 (meta)
+    pop bc ; bc = meta; +0 ()
+
+    ; bc += 4; Move to attribute view of tileset.
+    ld a, c
+    add 4
+    ld c, a
+    ld a, b
+    adc 0
+    ld b, a
+    
+    ; Copy tiles.
+    call _gfx_load_map_data
+    ret
+
+
+; A sprite copier subroutine that performs OAM DMA and returns to its caller.
+; Before calling, you must call gfx_load_sprite_copy to initialize this routine into HRAM.
+gfx_sprite_copy EQU $FF80
+; Dirty: a, h
+; Arguments: h = high byte of sprite buffer address.
+
+; Initializes the subroutine for gfx_sprite_copy, a handle for doing OAM DMA.
+; Must be called before using gfx_sprite_copy.
+gfx_load_sprite_copy:
+; Dirty: all registers.
+; Arguments: none
+    jr .copy_end
+    ; Skip over the below code.
+.copy_begin:
+            ld a, h
+            ldh [$FF46], a
+            ; Delay, to let the DMA finish.
+            ld a, 40
+.copy_loop:
+            ; repeat
+                dec a
+                jr nz, .copy_loop
+            ; until a == 0
+            ret
+.copy_end:
+    ; Now copy the above.
+    ld hl, .copy_begin
+    ld bc, .copy_end - .copy_begin
+    ld de, gfx_sprite_copy
+.loop:
+    ; repeat
+        ld a, [hl+]
+        ld [de], a
+        inc de
+        
+        dec c
+        jr nz, .loop
+        ; if c == 0
+            ret
+        ; end
+    ; end
+    
+; Unrolls a loop to copy a column of data to the destination buffer.
+gfx_unroll_column:
+; Dirty: all registers.
+; Arguments:
+;   hl = pointer to code buffer.
+;   bc = buffered column (2 x 32).
+;   de = eventual destination.
+;   [t0] = row offset
+; Local:
+;   [t1] = remaining iterations.
+; Post:
+;   hl points to later in the code buffer.
+    ; a = (64 - offset * 2) % 64, which gives us an
+    ; offset from the end, instead of the start.
+    ld a, [t0]
+    sla a
+    cpl
+    add a, $41
+    and $3F
+    ; offset = a
+    ld [t0], a
+    ; bc += a
+    add a, c
+    ld c, a
+    ld a, b
+    adc a, 0
+    ld b, a
+    
+    ld a, 32 ; next = 32
+.loop:
+    ; repeat
+        ld [t1], a ; remaining = next
+        
+        ; Left tile:
+        ; buffer << `ld a, n`
+        ld a, $3E
+        ld [hl+], a
+        ld a, [bc]
+        ld [hl+], a
+        
+        ; buffer << `ld [nn], a`
+        ld a, $EA
+        ld [hl+], a
+        ld a, e
+        ld [hl+], a
+        ld a, d
+        ld [hl+], a
+        
+        ; src++
+        inc bc
+        ; dest++
+        inc de
+
+        ; Right tile:
+        ; buffer << `ld a, n`
+        ld a, $3E
+        ld [hl+], a
+        ld a, [bc]
+        ld [hl+], a
+        
+        ; buffer << `ld [nn], a`
+        ld a, $EA
+        ld [hl+], a
+        ld a, e
+        ld [hl+], a
+        ld a, d
+        ld [hl+], a
+
+        ; src++
+        inc bc
+        
+        ; a = offset + 2
+        ld a, [t0]
+        inc a
+        inc a
+        cp 64
+        jr nz, .skip_modulo
+        ; if offset == 64,
+            ; src -= 64.
+            ld a, c
+            sub a, 64
+            ld c, a
+            ld a, b
+            sbc a, 0
+            ld b, a
+            ; a = 0.
+            xor a, a
+        ; end
+.skip_modulo:
+        ; offset = a
+        ld [t0], a
+        
+        ; dest += 31
+        ld a, e
+        add a, 31
+        ld e, a
+        ld a, d
+        adc a, 0
+        ld d, a
+        
+        ; next = remaining, next--
+        ld a, [t1]
+        dec a
+
+        jr nz, .loop
+    ; until next == 0
+    
+    ; We're done!
+    ret
+
+; Unrolls a loop to copy a row of data to the destination buffer.
+gfx_unroll_row:
+; Dirty: all registers.
+; Arguments:
+;   hl = pointer to code buffer.
+;   bc = buffered row (32 x 2).
+;   de = eventual destination.
+;   [t0] = column offset
+; Local:
+;   [t1] = remaining iterations.
+; Post:
+;   hl points to later in the code buffer.
+
+    ; a = (32 - offset) % 32, which gives us an
+    ; offset from the end, instead of the start.
+    ld a, [t0]
+    cpl
+    add a, $21
+    and $1F
+    ; offset = a
+    ld [t0], a
+    ; bc += a
+    add a, c
+    ld c, a
+    ld a, b
+    adc a, 0
+    ld b, a
+    
+_I = 0    
+    REPT 2
+    ; for i in 0..1,
+        ld a, 32 ; next = 32
+.loop_\@:
+        ; repeat
+            ld [t1], a ; remaining = next
+            
+            ; buffer << `ld a, n`
+            ld a, $3E
+            ld [hl+], a
+            ld a, [bc]
+            ld [hl+], a
+            
+            ; buffer << `ld [nn], a`
+            ld a, $EA
+            ld [hl+], a
+            ld a, e
+            ld [hl+], a
+            ld a, d
+            ld [hl+], a
+
+            ; src++
+            inc bc
+            
+            ; a = offset + 1
+            ld a, [t0]
+            inc a
+            cp 32
+            jr nz, .skip_modulo_\@
+            ; if offset == 32,
+                ; src -= 32.
+                ld a, c
+                sub a, 32
+                ld c, a
+                ld a, b
+                sbc a, 0
+                ld b, a
+                ; a = 0.
+                xor a, a
+            ; end
+.skip_modulo_\@:
+            ; offset = a
+            ld [t0], a
+            
+            ; dest++
+            inc de
+            
+            ; next = remaining, next--
+            ld a, [t1]
+            dec a
+
+            jr nz, .loop_\@
+        ; until next == 0
+_I = _I + 1
+        IF _I == 1
+            ; if i == 1,
+                ; src += 32. (second row)
+                ld a, c
+                add a, 32
+                ld c, a
+                ld a, b
+                adc a, 0
+                ld b, a
+            ; end
+        ENDC
+    ; end
+    ENDR
+    
+    ; We're done!
+    ret
+
+gfx_unroll_grab_column:
+; Arguments: 
+;   de = eventual destination pointer.
+;   hl = source map pointer
+; Note:
+;   Lock the temp buffer before calling this! Otherwise bad things could occur.
+    ld c, 16
+    ; buffer << `ld de, nn`
+    ; buffer << `ld hl, nn`
+    ; buffer << `ld bc, n` where n = 32.
+.loop:
+    ; Left column:
+    ; buffer << `ld a, [hl+]`
+    ; buffer << `ld [de], a`
+    ; buffer << `inc de`
+    ; Right column:
+    ; buffer << `ld a, [hl-]`
+    ; buffer << `ld [de], a`
+    ; buffer << `inc de`
+    ; buffer << `add hl, bc`
+    dec c
+    jr nz, .loop
+    ret
+    

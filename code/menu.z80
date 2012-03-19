@@ -1,0 +1,638 @@
+menu_start:
+    ; Setup some events.
+    ld bc, menu_step
+    ld hl, menu_scan_main
+    ld de, menu_draw
+
+    ; Not yet loaded.
+    ld a, 0
+    ld [menu_loaded], a
+    
+    ld a, c
+    ld [step_event_lo], a
+    ld a, b
+    ld [step_event_hi], a
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+    ld a, e
+    ld [draw_event_lo], a
+    ld a, d
+    ld [draw_event_hi], a
+    
+    jp menu_step ; tail call
+
+menu_cancel:
+    di    
+    GB_DISPLAY_DISABLE
+
+    call textbox_init
+
+    ; Clear sprites.
+    ld hl, sprite_buffer
+    ld a, 0
+    ld bc, SPRITE_BUFFER_SIZE
+    call memset
+    ; Copy now.
+    ld h, sprite_buffer >> 8
+    call gfx_sprite_copy
+
+    ; Reset camera.
+    ld a, [camera_x_lo]
+    ldh [gb_scroll_x], a
+    ld a, [camera_y_lo]
+    ldh [gb_scroll_y], a
+
+    ld a, GB_LCD_ON | GB_LCD_WIN_MAP_2 | GB_LCD_TILES_2 | GB_LCD_WIN_ON | GB_LCD_SPR_ON | GB_LCD_BG_ON
+    ldh [gb_lcd_ctrl], a
+    ei
+    jp map_start ; tail call
+
+menu_step:
+    ; If menu cancelled.
+    ld a, [menu_mode]
+    cp MENU_MODE_OFF
+    jp z, menu_cancel ; tail call
+
+    ; If menu switched.
+    ld a, [menu_mode]
+    cp MENU_MODE_ITEM
+    jp z, item_menu_start ; tail call
+
+    ; Check if the menu is loaded...
+    ld a, [menu_loaded]
+    or a, a
+    jp nz, .skip
+    ; if not, load it!
+        di
+        GB_DISPLAY_DISABLE
+
+        ld hl, gb_vram_map_2
+        ld a, 12
+        ld [t0], a
+        ld a, 12
+        ld [t1], a
+        call textbox_create
+
+        ld hl, gb_vram_map_2 + 13
+        ld a, 6
+        ld [t0], a
+        ld a, 6
+        ld [t1], a
+        call textbox_create
+
+        ld hl, gb_vram_map_2 + 32 * 7 + 13
+        ld a, 6
+        ld [t0], a
+        ld a, 2
+        ld [t1], a
+        call textbox_create
+
+        ld hl, gb_vram_map_2 + 32 * 10 + 13
+        ld a, 6
+        ld [t0], a
+        ld a, 2
+        ld [t1], a
+        call textbox_create
+
+        ld hl, gb_vram_map_2 + 32 * 13
+        ld a, 19
+        ld [t0], a
+        ld a, 4
+        ld [t1], a
+        call textbox_create
+
+        ; Clear sprites.
+        ld hl, sprite_buffer
+        ld a, 0
+        ld bc, SPRITE_BUFFER_SIZE
+        call memset
+        ; Copy now.
+        ld h, sprite_buffer >> 8
+        call gfx_sprite_copy
+        ; Clear tile buffer.
+        call map_begin_tile_buffer
+        call map_end_tile_buffer
+
+        ld hl, sprite_buffer
+        ld a, 1 * 8 + 16
+        ld [hl+], a
+        ld a, 1 * 8 + 8
+        ld [hl+], a
+        ld a, $01
+        ld [hl+], a
+        ld a, $00
+        ld [hl+], a
+
+        ld a, 1 * 8 + 16
+        ld [hl+], a
+        ld a, 1 * 8 + 8 + 8
+        ld [hl+], a
+        ld a, $02
+        ld [hl+], a
+        ld a, $00
+        ld [hl+], a
+
+        ld a, 1 * 8 + 16 + 8
+        ld [hl+], a
+        ld a, 1 * 8 + 8
+        ld [hl+], a
+        ld a, $11
+        ld [hl+], a
+        ld a, $00
+        ld [hl+], a
+
+        ld a, 1 * 8 + 16 + 8
+        ld [hl+], a
+        ld a, 1 * 8 + 8 + 8
+        ld [hl+], a
+        ld a, $12
+        ld [hl+], a
+        ld a, $00
+        ld [hl+], a
+        
+        ld a, 1 * 8 + 16
+        ld [hl+], a
+        ld a, 9 * 8 + 8
+        ld [hl+], a        
+        ld a, SPR_ICON_POISON
+        ld [hl+], a
+        ld a, $01
+        ld [hl+], a
+        
+        ld a, 8 * 8 + 16
+        ld [hl+], a
+        ld a, 14 * 8 + 8
+        ld [hl+], a
+        ld a, SPR_ICON_BONE
+        ld [hl+], a
+        ld a, $01
+        ld [hl+], a
+
+        ld de, placeholder_hero_name
+        ld hl, gb_vram_map_2 + 32*1 + 4
+        call textbox_copy_string
+
+        ld de, stat_label_lv
+        ld hl, gb_vram_map_2 + 32 * 2 + 7
+        call textbox_copy_raw_tile_string
+        
+        ld de, stat_label_hp
+        ld hl, gb_vram_map_2 + 32 * 4 + 1
+        call textbox_copy_raw_tile_string
+        ld de, stat_label_mp
+        ld hl, gb_vram_map_2 + 32 * 4 + 7
+        call textbox_copy_raw_tile_string
+        
+        ld de, stat_label_atk
+        ld hl, gb_vram_map_2 + 32 * 6 + 1
+        call textbox_copy_raw_tile_string
+        ld de, stat_label_def
+        ld hl, gb_vram_map_2 + 32 * 6 + 7
+        call textbox_copy_raw_tile_string
+        
+        ld de, stat_label_int
+        ld hl, gb_vram_map_2 + 32 * 8 + 1
+        call textbox_copy_raw_tile_string
+        ld de, stat_label_spd
+        ld hl, gb_vram_map_2 + 32 * 8 + 7
+        call textbox_copy_raw_tile_string
+        
+        ld de, stat_label_next
+        ld hl, gb_vram_map_2 + 32 * 10 + 1
+        call textbox_copy_raw_tile_string
+        
+        ld de, stat_label_exp_bar
+        ld hl, gb_vram_map_2 + 32 * 11 + 1
+        call textbox_copy_raw_tile_string
+
+        ld bc, $0000
+.menu_text_load_loop:
+        ; do
+            ld hl, main_menu_text
+            ld a, l
+            add a, c
+            ld l, a
+            ld a, h
+            adc a, 0
+            ld h, a
+
+            ld a, [hl+]
+            ld e, a
+            ld a, [hl]
+            ld d, a
+
+            ld hl, gb_vram_map_2 + 32 * MAIN_MENU_OPTIONS_Y + 15
+            ld a, l
+            add a, b
+            ld l, a
+            ld a, h
+            adc a, 0
+            ld h, a
+            push bc
+            call textbox_copy_string
+            pop bc
+
+            ld a, b
+            add a, 32
+            ld b, a
+
+            ld a, c
+            add a, 4
+            ld c, a
+            cp a, main_menu_text_end - main_menu_text
+            jr nz, .menu_text_load_loop
+        ; while end of text pointer area is reached.
+
+        ld de, placeholder_99
+        ld hl, gb_vram_map_2 + 32 * 2 + 10
+        call textbox_copy_string
+
+        ld de, placeholder_999
+        ld hl, gb_vram_map_2 + 32*4 + 3
+        call textbox_copy_string
+        ld de, placeholder_999
+        ld hl, gb_vram_map_2 + 32*4 + 9
+        call textbox_copy_string
+
+        ld de, placeholder_99
+        ld hl, gb_vram_map_2 + 32*6 + 4
+        call textbox_copy_string
+        ld de, placeholder_99
+        ld hl, gb_vram_map_2 + 32*6 + 10
+        call textbox_copy_string
+        ld de, placeholder_99
+        ld hl, gb_vram_map_2 + 32*8 + 4
+        call textbox_copy_string
+        ld de, placeholder_99
+        ld hl, gb_vram_map_2 + 32*8 + 10
+        call textbox_copy_string
+
+        ld de, placeholder_1
+        ld hl, gb_vram_map_2 + 32*10 + 11
+        call textbox_copy_string
+
+        ld de, placeholder_9999
+        ld hl, gb_vram_map_2 + 32*8 + 15
+        call textbox_copy_string
+
+        ld de, menu_desc_item
+        ld hl, gb_vram_map_2 + 32*14 + 1
+        call textbox_copy_string
+
+        ld hl, gb_vram_map_2 + 32 * MAIN_MENU_TIMER_Y + 16
+        ld a, TILE_COLON
+        ld [hl], a
+        ld a, [timer_minutes]
+        ld l, a
+        ld h, 0
+        call to_bcd
+        ld hl, gb_vram_map_2 + 32 * MAIN_MENU_TIMER_Y + 17
+        call textbox_copy_number_2_digit
+        ld a, [timer_hours]
+        ld l, a
+        ld h, 0
+        call to_bcd
+        ld hl, gb_vram_map_2 + 32 * MAIN_MENU_TIMER_Y + 14
+        call textbox_copy_number_2_digit
+
+        ; Reset scroll registers for now.
+        ld a, 0
+        ld [gb_scroll_x], a
+        ld [gb_scroll_y], a
+
+        ; Clear menu state
+        ld a, 0
+        ld [menu_repeat_delay], a
+        ; Uncomment to reset cursor to default location.
+        ;ld [menu_cursor_y], a
+        ;ld [menu_cursor_old_y], a
+
+        ld a, GB_LCD_ON | GB_LCD_BG_MAP_2 | GB_LCD_TILES_2 | GB_LCD_SPR_ON | GB_LCD_BG_ON
+        ldh [gb_lcd_ctrl], a
+        
+        ; Loaded!
+        ld a, 1
+        ld [menu_loaded], a        
+        
+        ei
+    ; end
+.skip:
+
+    call map_begin_tile_buffer
+        ; Lookup the address in the text pointer table to read.
+        ld hl, main_menu_text
+        ld a, [menu_cursor_y]
+        sla a
+        sla a ; *= 4
+        add a, 2 ; + 2 (for description)
+        ; hl += a
+        add a, l
+        ld l, a
+        ld a, h
+        adc a, 0
+        ld h, a
+
+        ; Load the text pointer.
+        ld a, [hl+]
+        ld c, a
+        ld a, [hl]
+        ld b, a
+
+        ; hl = code buffer.
+        ld hl, map_buf_ptr_lo
+        ld a, [hl+]
+        ld h, [hl]
+        ld l, a ; hl = code buffer
+
+        ; copy some text, now that bc is loaded.
+        ld de, gb_vram_map_2 + 32*14 + 1
+        call textbox_unroll_string
+
+        ; Switch active bank to tiles.
+        ; buffer << `ld a, n`
+        ld a, $3E
+        ld [hl+], a
+        ld a, 0
+        ld [hl+], a
+        ; buffer << `ld [$FFnn], a`
+        ld a, $E0
+        ld [hl+], a
+        ld a, gbc_vram_bank & $FF
+        ld [hl+], a
+
+        ; Clear old cursor position.
+        ; buffer << `ld a, n`
+        ld a, $3E
+        ld [hl+], a
+        ld a, TILE_BOX_FRAME + 4
+        ld [hl+], a
+
+        ; bc = cursor y * 32
+        ld a, [menu_cursor_old_y]
+        ld c, a
+        ld b, 0
+        ; bc *= 32
+        sla c
+        rl b
+        sla c
+        rl b
+        sla c
+        rl b
+        sla c
+        rl b
+        sla c
+        rl b
+
+        ; de = top left + cursor offset
+        ld de, gb_vram_map_2 + 32 * MAIN_MENU_OPTIONS_Y + 14
+        ld a, e
+        add a, c
+        ld e, a
+        ld a, d
+        adc a, b
+        ld d, a
+        
+        ; buffer << `ld [nn], a`
+        ld a, $EA
+        ld [hl+], a
+        ld a, e
+        ld [hl+], a
+        ld a, d
+        ld [hl+], a
+
+        ; Draw new cursor position.
+        ; buffer << `ld a, n`
+        ld a, $3E
+        ld [hl+], a
+        ld a, TILE_ICON_CURSOR
+        ld [hl+], a
+
+        ; bc = cursor y * 32
+        ld a, [menu_cursor_y]
+        ld c, a
+        ld b, 0
+        ; bc *= 32
+        sla c
+        rl b
+        sla c
+        rl b
+        sla c
+        rl b
+        sla c
+        rl b
+        sla c
+        rl b
+
+        ; de = top left + cursor offset
+        ld de, gb_vram_map_2 + 32 * MAIN_MENU_OPTIONS_Y + 14
+        ld a, e
+        add a, c
+        ld e, a
+        ld a, d
+        adc a, b
+        ld d, a
+        
+        ; buffer << `ld [nn], a`
+        ld a, $EA
+        ld [hl+], a
+        ld a, e
+        ld [hl+], a
+        ld a, d
+        ld [hl+], a
+
+        push hl
+        ld a, [timer_minutes]
+        ld l, a
+        ld h, 0
+        call to_bcd
+        ld hl, t0 ; Use tmp space
+        call textbox_copy_number_2_digit
+        ; Zero-terminate
+        xor a, a
+        ld [hl+], a
+        ld bc, t0
+        pop hl
+        ld bc, t0
+        ld de, gb_vram_map_2 + 32 * MAIN_MENU_TIMER_Y + 17
+        call textbox_unroll_string
+
+        push hl
+        ld a, [timer_hours]
+        ld l, a
+        ld h, 0
+        call to_bcd
+        ld hl, t0 ; Use tmp space
+        call textbox_copy_number_2_digit
+        ; Zero-terminate
+        xor a, a
+        ld [hl+], a
+        ld bc, t0
+        pop hl
+        ld bc, t0
+        ld de, gb_vram_map_2 + 32 * MAIN_MENU_TIMER_Y + 14
+        call textbox_unroll_string
+
+        ; Now save the code pointer in case we need to do more crap here.
+        ld a, l
+        ld [map_buf_ptr_lo], a
+        ld a, h
+        ld [map_buf_ptr_hi], a
+
+        ; Update cursor position to new location.
+        ld a, [menu_cursor_y]
+        ld [menu_cursor_old_y], a
+    call map_end_tile_buffer
+
+    ret
+    
+menu_scan_gradient:
+    call wait_for_hblank
+
+    ; Calculate gradient color.
+    ld hl, gradient_colors
+    ld a, [gradient_index]
+    ld c, a
+    ld b, 0
+    add hl, bc
+
+    ; Copy color entry.
+    ld a, $82
+    ldh [gbc_bg_pal_addr], a
+    ld a, [hl+]
+    ldh [gbc_bg_pal_data], a
+    ld a, [hl-]
+    ldh [gbc_bg_pal_data], a
+
+    ld a, $1B
+    ldh [dmg_bg_pal], a
+
+    ; Prepare next stat interrupt.
+    ld a, [scan_scanline]
+    add a, 8
+    ld [scan_scanline], a
+    ldh [gb_line_y_cmp], a
+
+    ; Advance gradient index.
+    ld a, [gradient_index]
+    inc a
+    inc a
+    ld [gradient_index], a
+
+    ret
+
+menu_scan_main:
+    ; Apply gradient.
+    call menu_scan_gradient
+
+    ; Only apply the gradient on subsequent scanline interrupts.
+    ld hl, menu_scan_gradient
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+
+    ; Check for input.
+    call joy_check
+
+    ; Skip arrow response if we're still delayed.
+    ld a, [menu_repeat_delay]
+    or a, a
+    jr z, .check_up
+    ; if repeat delay,
+        ; repeat delay -= 1
+        dec a
+        ld [menu_repeat_delay], a
+        jr .done_arrow_check
+.check_up:
+    ld a, [joy_controls]
+    bit JOY_BIT_UP, a
+    jr z, .check_down
+    ; if down pressed, then move down
+        ld a, [menu_cursor_y]
+        or a, a
+        jr nz, .skip_wrap_top
+            ld a, 5
+.skip_wrap_top:
+        dec a
+        ld [menu_cursor_y], a
+
+        ; Set some delay before checking input again.
+        ld a, MENU_CURSOR_REPEAT
+        ld [menu_repeat_delay], a
+        jr .done_arrow_check
+.check_down:
+    bit JOY_BIT_DOWN, a
+    jr z, .done_arrow_check
+    ; else if up pressed, then move up
+        ld a, [menu_cursor_y]
+        inc a
+        cp a, 5
+        jr nz, .skip_wrap_bottom
+            ld a, 0
+.skip_wrap_bottom:
+        ld [menu_cursor_y], a
+        ; Set some delay before checking input again.
+        ld a, MENU_CURSOR_REPEAT
+        ld [menu_repeat_delay], a
+        ;jr .done_arrow_check
+.done_arrow_check:
+    ; end
+
+.check_a:
+    ld a, [joy_controls]
+    bit JOY_BIT_A, a
+jr z, .done_accept_check
+        ld a, [joy_unpress]
+        set JOY_BIT_A, a
+        ld [joy_unpress], a
+
+        ld a, MENU_MODE_ITEM
+        ld [menu_mode], a
+    ; end
+.done_accept_check:
+    
+.check_b:
+    ; if cancel button,
+    ld a, [joy_controls]
+    bit JOY_BIT_B, a
+    jr z, .done_cancel_check
+        ld a, [joy_unpress]
+        set JOY_BIT_B, a
+        ld [joy_unpress], a
+
+        ld a, MENU_MODE_OFF
+        ld [menu_mode], a
+    ; end
+.done_cancel_check:
+
+    ; Done!
+    ret
+
+menu_draw:
+    ld hl, gradient_colors
+    ; Copy color entry.
+    ld a, $82
+    ldh [gbc_bg_pal_addr], a
+    ld a, [hl+]
+    ldh [gbc_bg_pal_data], a
+    ld a, [hl-]
+    ldh [gbc_bg_pal_data], a
+
+    ; Reset gradient index.
+    ld a, 2
+    ld [gradient_index], a
+
+    ; Prepare next stat interrupt.
+    ld a, 7
+    ld [scan_scanline], a
+
+    ; Hook main scanline event.
+    ld hl, menu_scan_main
+    ld a, l
+    ld [scan_event_lo], a
+    ld a, h
+    ld [scan_event_hi], a
+
+    jp handle_redraw ; tail call

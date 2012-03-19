@@ -1,0 +1,99 @@
+HANDLER_NOP: MACRO
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    reti
+ENDM
+
+HANDLER_JUMP: MACRO
+    nop
+    nop
+    nop
+    nop
+    nop
+    jp \1
+ENDM
+
+INTERRUPT_NOP: MACRO
+    HANDLER_NOP
+ENDM
+
+INTERRUPT_JUMP: MACRO
+    nop
+    push af
+    push bc
+    push de
+    push hl
+    jp \1
+ENDM
+
+INTERRUPT_RETURN: MACRO
+    pop hl
+    pop de
+    pop bc
+    pop af
+    reti
+ENDM
+
+handlers:
+; RST vectors
+    HANDLER_NOP
+    HANDLER_NOP
+    HANDLER_NOP
+    HANDLER_NOP
+    HANDLER_NOP
+    HANDLER_NOP
+    HANDLER_NOP
+    HANDLER_NOP
+; IRQ Vectors.
+    ; Vblank IRQ
+    INTERRUPT_JUMP draw
+    ; Stat IRQ.
+    INTERRUPT_JUMP stat
+    ; Timer IRQ
+    INTERRUPT_NOP
+    ; Serial IRQ
+    INTERRUPT_NOP
+    ; High-low IRQ
+    INTERRUPT_NOP
+    ; Pad unused space.
+    DS ($100 - $68)
+boot:
+    ; Entry point.
+    nop
+    jp main
+header:
+    ; Nintendo Logo.
+    DB $CE, $ED, $66, $66, $CC, $0D, $00, $0B, $03, $73, $00, $83, $00, $0C, $00, $0D
+    DB $00, $08, $11, $1F, $88, $89, $00, $0E, $DC, $CC, $6E, $E6, $DD, $DD, $D9, $99
+    DB $BB, $BB, $67, $63, $6E, $0E, $EC, $CC, $DD, $DC, $99, $9F, $BB, $B9, $33, $3E
+    ; 11 character title.
+    DB "HELLO      "
+    ; Manufacturer code.
+    DB "    "
+    ; Compatibility: $00 = GB, $80 = GB/GBC, $C0 = GBC.
+    DB $80
+    ; New licensee code.
+    DB "AC"
+    ; Super Game Boy compatibility flag.
+    DB 0
+    ; Cart type. $1A = MBC5 + RAM.
+    DB $1A
+    ; Rom size (0 = 32K * 2, 1 = 64K * 4, 2 = 128K * 8, 3 = 256K * 16, 4 = 512K * 32)
+    DB 0
+    ; Ram size (0 = no RAM, 1 = 2K, 2 = 8K, 3 = 32K * 4 banks)
+    DB 0
+    ; Non-Japanese ROM.
+    DB 1
+    ; Use New Licensee.
+    DB $33
+    ; Version.
+    DB 0
+    ; Complement check.
+    DB 0
+    ; Checksum.
+    DW 0

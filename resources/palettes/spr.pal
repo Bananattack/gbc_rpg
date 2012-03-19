@@ -1,0 +1,11 @@
+; source resources/palettes/sprpal.png (rgb), 2 palettes, 8 total colors.
+; Palette 0
+DW $7C1F ; #FF00FF
+DW $0C63 ; #181818
+DW $181E ; #F00030
+DW $42FD ; #EDB887
+; Palette 1
+DW $7C1F ; #FF00FF
+DW $0C63 ; #181818
+DW $6660 ; #0098CC
+DW $7FFF ; #FFFFFF

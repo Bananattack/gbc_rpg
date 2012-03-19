@@ -1,0 +1,17 @@
+placeholder_text: Test. Hello there!|Fun times!
+placeholder_hero_name: Kram
+placeholder_99: 99
+placeholder_999: 999
+placeholder_9999: 9999
+placeholder_99_00: 99:00
+placeholder_1: 1
+menu_label_item: Item
+menu_label_tech: Tech
+menu_label_gear: Gear
+menu_label_edit: Edit
+menu_label_save: Save
+menu_desc_item: View an inventory |of your items.____
+menu_desc_tech: Check and use your|magic techniques._
+menu_desc_gear: Manage your_______|current equipment.
+menu_desc_edit: Set your preferred|options.__________
+menu_desc_save: Record your game__|progress._________
